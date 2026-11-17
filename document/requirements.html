@@ -1,0 +1,273 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Slot Watcher Requirements</title>
+<style>
+  :root {
+    --bg: #ffffff; --fg: #1f2328; --muted: #59636e; --line: #d1d9e0;
+    --head-bg: #f6f8fa; --accent: #0e9aa7; --accent-bg: rgba(14,154,167,.12);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #0d1117; --fg: #e6edf3; --muted: #9198a1; --line: #3d444d;
+      --head-bg: #151b23; --accent: #3cc4cf; --accent-bg: rgba(60,196,207,.14);
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #0d1117; --fg: #e6edf3; --muted: #9198a1; --line: #3d444d;
+    --head-bg: #151b23; --accent: #3cc4cf; --accent-bg: rgba(60,196,207,.14);
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--fg);
+    font: 16px/1.6 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+  main { max-width: 860px; margin: 0 auto; padding: 32px 16px 64px; }
+  h1 { font-size: 1.9rem; line-height: 1.25; margin: 0 0 4px; }
+  h2 { font-size: 1.3rem; margin: 40px 0 8px; padding-bottom: 6px; border-bottom: 1px solid var(--line); }
+  h3 { font-size: 1rem; margin: 24px 0 6px; }
+  .byline { color: var(--muted); margin: 0 0 24px; }
+  p, li { max-width: 72ch; }
+  code { font-family: ui-monospace, Consolas, monospace; font-size: .9em; background: var(--head-bg); padding: 1px 5px; border-radius: 4px; }
+  .table-wrap { overflow-x: auto; margin: 8px 0 16px; }
+  table { border-collapse: collapse; width: 100%; font-size: .94rem; }
+  th, td { border: 1px solid var(--line); padding: 8px 10px; text-align: left; vertical-align: top; }
+  th { background: var(--head-bg); font-weight: 600; }
+  td:first-child { white-space: nowrap; }
+  ul.check { list-style: none; padding-left: 0; }
+  ul.check li { padding-left: 28px; position: relative; margin: 6px 0; }
+  ul.check li::before {
+    content: ""; position: absolute; left: 0; top: 4px; width: 16px; height: 16px;
+    border: 1.5px solid var(--muted); border-radius: 4px;
+  }
+  .note { border-left: 3px solid var(--accent); background: var(--accent-bg); padding: 10px 14px; border-radius: 0 6px 6px 0; }
+  figure { margin: 16px 0; }
+  figure svg { width: 100%; height: auto; display: block; }
+  figcaption { color: var(--muted); font-size: .9rem; margin-top: 6px; }
+  svg .edge { stroke: var(--muted); fill: none; stroke-width: 1.25; }
+  svg .box { fill: none; stroke: var(--muted); stroke-width: 1.25; }
+  svg .main { fill: var(--accent-bg); stroke: var(--accent); stroke-width: 2; }
+  svg .ink { fill: var(--fg); }
+  svg .quiet { fill: var(--muted); font-size: 11.5px; }
+  svg .arrowhead { fill: var(--muted); }
+</style>
+</head>
+<body>
+<main>
+
+<h1>Slot Watcher: Android App Requirements Specification</h1>
+<p class="byline">Version 1.0 · 18 Nov 2026 · Author: Md. Nur A Alam</p>
+
+<h2>1. Purpose</h2>
+<p>Slot Watcher is a personal Android app that logs in to the Mojaru Teacher Panel at times the examiner chooses and checks whether any pre-assessment slot is booked. If any are, it rings a spoken alarm such as “2 slots booked: 6:30 PM, 7:10 PM”.</p>
+<p>Today the examiner opens Chrome, logs in and opens the Pre Assessment List by hand every few minutes during the evening. The app replaces those repeated manual checks.</p>
+
+<h2>2. Scope and assumptions</h2>
+<p>One user: the examiner, on their own Android phone, using their own Mojaru teacher account.</p>
+<h3>In scope</h3>
+<ul>
+  <li>Saving the Mojaru login (email/mobile + password) on the device</li>
+  <li>Setting up a watch session: date, start time, end time, gap</li>
+  <li>Checking the Pre Assessment List automatically at each scheduled time</li>
+  <li>A spoken alarm listing how many slots are booked and their times</li>
+  <li>A history of what each check found</li>
+</ul>
+<h3>Out of scope</h3>
+<ul>
+  <li>Booking, cancelling or editing slots</li>
+  <li>Joining sessions, marking present/absent, or anything else in the panel</li>
+  <li>iOS, web or desktop versions</li>
+  <li>Use by other examiners or with more than one account</li>
+</ul>
+<h3>Assumptions</h3>
+<ul>
+  <li>The panel at teacher.mojaru.com stays reachable and its pages keep their current layout.</li>
+  <li>The Pre Assessment List can show any chosen date. Its date box defaults to today.</li>
+  <li>A slot counts as booked when its Slot Status is not “available” (for example “booked” or “upcoming”). This needs checking against a real booked slot.</li>
+</ul>
+
+<h2>3. Current manual workflow</h2>
+<p>Each manual check takes 7 steps, and the examiner repeats them every 10 minutes or so through the evening.</p>
+<ol>
+  <li>Open Chrome.</li>
+  <li>Go to <code>teacher.mojaru.com/teacher/login</code>.</li>
+  <li>Sign in on the “Sign in to Mojaru Teacher Panel” form with Email/Mobile and Password.</li>
+  <li>On the Dashboard (<code>/teacher/dashboard</code>), open the side menu.</li>
+  <li>Choose Pre Assessment Program → Pre Assessment List.</li>
+  <li>Check the date box in “At a Glance” (it shows today, e.g. 18-11-2026) and read the <strong>Booked Slots</strong> count.</li>
+  <li>If it is above 0, scroll the Pre-Assessments Program table to find which rows are booked.</li>
+</ol>
+<h3>What the list page shows</h3>
+<div class="table-wrap"><table>
+  <tr><th>Element</th><th>Example from the screenshots</th></tr>
+  <tr><td>At a Glance counters</td><td>Total Slots 18 · Booked Slots 0 · Available Slots 18 · Expired 0 · Upcoming Session 0 · Completed 0</td></tr>
+  <tr><td>Filter tabs</td><td>All · Available · Present · Absent · Expired</td></tr>
+  <tr><td>Table columns</td><td>Date / Time Slot · Pre-Assessment Name · Course · Slot Status · Participant Name · Mobile Number · Link</td></tr>
+  <tr><td>A row</td><td>18 Nov 2026, 18:30 - 18:40 · Math Competency Test (MCT) for Abacus · available</td></tr>
+</table></div>
+<p>On the sample day the slots run every 10 minutes from 18:30, and there are 18 in total.</p>
+
+<h2>4. Functional requirements</h2>
+<p>The user enters a date, start time, end time and gap once. The app then checks at every gap step from start to end, and rings each time it finds booked slots.</p>
+
+<h3>Credentials</h3>
+<div class="table-wrap"><table>
+  <tr><th>ID</th><th>Requirement</th></tr>
+  <tr><td>FR-1</td><td>The user can enter and save a Mojaru Email/Mobile and Password.</td></tr>
+  <tr><td>FR-2</td><td>The app checks the login at save time and shows “Login OK” or the panel’s error message.</td></tr>
+  <tr><td>FR-3</td><td>The user can edit or delete the saved login.</td></tr>
+</table></div>
+
+<h3>Watch session</h3>
+<div class="table-wrap"><table>
+  <tr><th>ID</th><th>Requirement</th></tr>
+  <tr><td>FR-4</td><td>The user enters a date (date picker), a start time, an end time and a gap in minutes.</td></tr>
+  <tr><td>FR-5</td><td>The app lists the check times before starting. Example: 18-11-2026, 6:25 PM to 9:15 PM, gap 10 → 6:25, 6:35, 6:45 … 9:05, 9:15 PM (18 checks).</td></tr>
+  <tr><td>FR-6</td><td>If the end time is not on a gap step, the last check is the last step before it.</td></tr>
+  <tr><td>FR-7</td><td>Start time must be before end time, gap must be at least 1 minute, and the date can’t be in the past.</td></tr>
+  <tr><td>FR-8</td><td>Start sets the session going. Stop cancels all remaining checks.</td></tr>
+  <tr><td>FR-9</td><td>One session runs at a time. Starting a new one replaces the old one after the user confirms.</td></tr>
+  <tr><td>FR-10</td><td>If the session is started after its start time, checks skip the missed steps and resume at the next gap step.</td></tr>
+</table></div>
+
+<h3>Each check</h3>
+<div class="table-wrap"><table>
+  <tr><th>ID</th><th>Requirement</th></tr>
+  <tr><td>FR-11</td><td>At each check time the app logs in (or reuses a valid session) and opens the Pre Assessment List for the chosen date.</td></tr>
+  <tr><td>FR-12</td><td>It reads the Booked Slots count and the table rows, and records each booked slot’s time range (e.g. 18:30 - 18:40).</td></tr>
+  <tr><td>FR-13</td><td>A slot counts as booked when its Slot Status is anything other than “available” or “expired”.</td></tr>
+  <tr><td>FR-14</td><td>If the table spans several pages, the app reads all of them.</td></tr>
+  <tr><td>FR-15</td><td>Each check is logged with its time, booked count, booked slot times and result (OK / error).</td></tr>
+</table></div>
+
+<h3>Alarm</h3>
+<div class="table-wrap"><table>
+  <tr><th>ID</th><th>Requirement</th></tr>
+  <tr><td>FR-16</td><td>If one or more slots are booked, the app rings an alarm on <strong>every</strong> check while any slot is booked.</td></tr>
+  <tr><td>FR-17</td><td>The alarm plays a sound and speaks the result, for example: “2 slots booked: 6:30 PM and 7:10 PM.”</td></tr>
+  <tr><td>FR-18</td><td>The alarm shows full-screen, even over the lock screen, with the count and the slot times.</td></tr>
+  <tr><td>FR-19</td><td>The alarm keeps ringing and repeats the spoken message until the user taps Dismiss.</td></tr>
+  <tr><td>FR-20</td><td>Dismissing the alarm doesn’t stop the session. The next check still runs.</td></tr>
+  <tr><td>FR-21</td><td>If no slot is booked, the app stays silent and only updates the status notification (“6:35 PM — 0 booked”).</td></tr>
+</table></div>
+
+<h3>Errors</h3>
+<div class="table-wrap"><table>
+  <tr><th>ID</th><th>Requirement</th></tr>
+  <tr><td>FR-22</td><td>No internet or the site doesn’t respond: retry up to 3 times, 30 seconds apart, then notify “Check at 6:35 PM failed”.</td></tr>
+  <tr><td>FR-23</td><td>Login rejected (e.g. password changed): ring a distinct alarm saying “Login failed” and pause the session.</td></tr>
+  <tr><td>FR-24</td><td>Page layout not recognised: notify “Couldn’t read slots” so the user can check by hand.</td></tr>
+</table></div>
+
+<h3>History</h3>
+<div class="table-wrap"><table>
+  <tr><th>ID</th><th>Requirement</th></tr>
+  <tr><td>FR-25</td><td>A History screen lists past checks, newest first, with booked count and slot times.</td></tr>
+</table></div>
+
+<h2>5. Non-functional requirements</h2>
+<p>The hardest requirement is reliability: every check must run on time, even with the screen off, the app closed or battery saver on.</p>
+<div class="table-wrap"><table>
+  <tr><th>ID</th><th>Area</th><th>Requirement</th></tr>
+  <tr><td>NFR-1</td><td>Timing</td><td>Each check starts within 1 minute of its scheduled time, with the screen off and the app in the background.</td></tr>
+  <tr><td>NFR-2</td><td>Background</td><td>Checks run from exact alarms (AlarmManager) plus a short foreground task, so Doze and battery saver can’t delay them. The app asks for “Alarms &amp; reminders” and battery-optimisation exemption at setup.</td></tr>
+  <tr><td>NFR-3</td><td>Reboot</td><td>A session that’s still running comes back after the phone restarts.</td></tr>
+  <tr><td>NFR-4</td><td>Alarm audibility</td><td>The alarm uses the alarm audio channel, so it rings even when the phone is on silent or Do Not Disturb.</td></tr>
+  <tr><td>NFR-5</td><td>Security</td><td>The password is stored encrypted with the Android Keystore. It never leaves the phone except to teacher.mojaru.com over HTTPS.</td></tr>
+  <tr><td>NFR-6</td><td>Privacy</td><td>No analytics, ads or third-party servers. Participant names and mobile numbers aren’t stored.</td></tr>
+  <tr><td>NFR-7</td><td>Load on Mojaru</td><td>At most one login and one list request per check. The minimum gap is 1 minute.</td></tr>
+  <tr><td>NFR-8</td><td>Battery</td><td>A 3-hour session with a 10-minute gap uses under 3% of the battery.</td></tr>
+  <tr><td>NFR-9</td><td>Platform</td><td>Android 8.0 (API 26) and later. Tested on the examiner’s phone and Android 14+.</td></tr>
+  <tr><td>NFR-10</td><td>Language</td><td>Screens in English. The spoken alarm in English, with Bangla as an option (see Open questions).</td></tr>
+</table></div>
+
+<h2>6. Screens</h2>
+<p>The app has five screens. After the first setup, everyday use is just Home → New Session → Start.</p>
+<div class="table-wrap"><table>
+  <tr><th>Screen</th><th>Contents</th><th>Actions</th></tr>
+  <tr><td>Account (first launch)</td><td>Email/Mobile, Password (masked, show/hide)</td><td>Test &amp; Save</td></tr>
+  <tr><td>Home</td><td>Current session (date, window, gap), next check time, last result (“6:35 PM — 2 booked: 6:30, 7:10”), permission warnings</td><td>New Session · Stop · Check now · History · Settings</td></tr>
+  <tr><td>New Session</td><td>Date picker, Start time, End time, Gap (minutes, default 10), preview of all check times</td><td>Start</td></tr>
+  <tr><td>Alarm (full-screen)</td><td>“2 slots booked”, the list of slot times, the date</td><td>Dismiss</td></tr>
+  <tr><td>History</td><td>One row per check: time, booked count, slot times, OK/error</td><td>Clear history</td></tr>
+</table></div>
+<p>Settings has the alarm sound, voice language, the number of times to repeat the voice, and a link to edit the account.</p>
+<p>A status notification stays visible while a session runs, for example “Watching 18 Nov · next check 6:45 PM · last: 0 booked”.</p>
+
+<h2>7. Technical approach</h2>
+<p>Mojaru has no public API, so the app has to read the same pages the browser does. The first development task is to choose between the two ways of doing that.</p>
+<div class="table-wrap"><table>
+  <tr><th>Option</th><th>How it works</th><th>Strengths</th><th>Weaknesses</th></tr>
+  <tr><td>A. Direct HTTP (preferred)</td><td>Capture the login and slot-list requests the panel makes (Chrome DevTools → Network), then call them from the app with OkHttp/Retrofit and parse the response</td><td>Fast, light on battery, reliable in the background</td><td>Needs investigation first. Breaks if Mojaru changes its API</td></tr>
+  <tr><td>B. Hidden WebView</td><td>Load the pages in an invisible WebView, fill the login form, read the slot table with JavaScript</td><td>Works without knowing the API</td><td>Heavier and less reliable with the screen off. Breaks if the page layout changes</td></tr>
+</table></div>
+<p><strong>Proposed stack:</strong> Kotlin, Jetpack Compose UI, AlarmManager <code>setExactAndAllowWhileIdle</code> to wake the app for each check, a short foreground service to run the check, Android TextToSpeech for the voice, Room for history, and DataStore with the Android Keystore for the login.</p>
+
+<figure>
+<svg viewBox="0 0 760 396" role="img" aria-label="Booked slots ring the alarm on every check until the end time" font-size="13" font-family="system-ui, sans-serif">
+  <defs><marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path class="arrowhead" d="M0 0L10 5L0 10z"/></marker></defs>
+  <text class="ink" x="24" y="34" font-size="15" font-weight="600">Booked slots ring the alarm on every check until the end time</text>
+  <g class="edge">
+    <path d="M172 100H196" marker-end="url(#arr)"/>
+    <path d="M344 100H368" marker-end="url(#arr)"/>
+    <path d="M516 100H556" marker-end="url(#arr)"/>
+    <path d="M620 140V192" marker-end="url(#arr)"/>
+    <path d="M684 100H724V320H532" marker-end="url(#arr)"/>
+    <path d="M620 248V270H442V296" marker-end="url(#arr)"/>
+    <path d="M352 320H98V124" marker-end="url(#arr)"/>
+  </g>
+  <rect class="box" x="24" y="76" width="148" height="48" rx="8"/>
+  <text class="ink" x="98" y="104" text-anchor="middle">Check time reached</text>
+  <rect class="box" x="196" y="76" width="148" height="48" rx="8"/>
+  <text class="ink" x="270" y="104" text-anchor="middle">Sign in to panel</text>
+  <rect class="box" x="368" y="76" width="148" height="48" rx="8"/>
+  <text class="ink" x="442" y="104" text-anchor="middle">Read list for date</text>
+  <polygon class="box" points="556,100 620,60 684,100 620,140"/>
+  <text class="ink" x="620" y="104" text-anchor="middle">Any booked?</text>
+  <rect class="main" x="530" y="192" width="180" height="56" rx="8"/>
+  <text class="ink" x="620" y="216" text-anchor="middle" font-weight="600">Ring and speak times</text>
+  <text class="quiet" x="620" y="234" text-anchor="middle">until you tap Dismiss</text>
+  <rect class="box" x="352" y="296" width="180" height="48" rx="8"/>
+  <text class="ink" x="442" y="324" text-anchor="middle">Schedule next check</text>
+  <path class="edge" d="M270 124V146M442 124V146" stroke-dasharray="3 3"/>
+  <text class="quiet" x="356" y="164" text-anchor="middle">If sign-in or loading fails: retry 3 times, then notify</text>
+  <text class="quiet" x="628" y="164">yes</text>
+  <text class="quiet" x="704" y="92" text-anchor="middle">no</text>
+  <text class="quiet" x="716" y="290" text-anchor="end">update status only</text>
+  <text class="quiet" x="225" y="312" text-anchor="middle">next gap step</text>
+  <text class="quiet" x="442" y="368" text-anchor="middle">After the end-time check, the session stops</text>
+</svg>
+<figcaption>One check cycle, repeated at every gap step from the start time to the end time.</figcaption>
+</figure>
+<p>Whatever the result, the next check is scheduled, so one failure or one dismissed alarm never ends the session.</p>
+<p class="note">The app logs in to Mojaru automatically. Before relying on it, confirm with Mojaru that this kind of automated checking of your own account is allowed.</p>
+
+<h2>8. Acceptance criteria</h2>
+<p>The app is done when all of these pass on the examiner’s phone.</p>
+<ul class="check">
+  <li>Date 18-11-2026, 6:25 PM to 9:15 PM, gap 10 shows 18 check times from 6:25 to 9:15 PM, and checks run at those times within 1 minute.</li>
+  <li>With 0 booked, no alarm rings, and the notification shows “0 booked” after each check.</li>
+  <li>When 2 slots are booked (e.g. 18:30 and 19:10), the alarm rings and says “2 slots booked: 6:30 PM and 7:10 PM”, with the screen locked and the phone on silent.</li>
+  <li>The alarm keeps ringing until Dismiss is tapped. It rings again at the next check while the slots are still booked.</li>
+  <li>Checks continue on time with the screen off for the whole 3-hour session, and after a phone restart.</li>
+  <li>A wrong password triggers the “Login failed” alarm and pauses the session.</li>
+  <li>With mobile data and Wi-Fi off, a check retries and then shows “Check failed” without crashing.</li>
+  <li>The password can’t be read from the app’s storage files.</li>
+  <li>Stop cancels all remaining checks.</li>
+</ul>
+
+<h2>9. Open questions</h2>
+<ul class="check">
+  <li>What does a booked slot’s Slot Status say (“booked”, “upcoming”, something else)? A screenshot of a booked row would settle this.</li>
+  <li>Should the voice speak English, Bangla, or both?</li>
+  <li>Should the alarm also show the participant’s name for each booked slot, or only the time?</li>
+  <li>Does the Pre Assessment List show other dates when the date box is changed, or only today?</li>
+  <li>Does the panel log you out after a while, or allow more than one login at a time (phone app and Chrome together)?</li>
+  <li>Has Mojaru confirmed that automated checking of your own account is allowed?</li>
+</ul>
+
+</main>
+</body>
+</html>
