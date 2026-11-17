@@ -23,6 +23,8 @@ import androidx.core.app.NotificationCompat
 import androidx.core.app.ServiceCompat
 import app.slotwatcher.Notifications
 import app.slotwatcher.R
+import app.slotwatcher.data.SettingsStore
+import app.slotwatcher.data.VoiceLanguage
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -33,21 +35,29 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
 import java.util.Locale
 
+enum class AlarmKind { Booked, NoneBooked, LoginFailed, Test }
+
 data class AlarmInfo(
+    val kind: AlarmKind,
     val title: String,       // "2 slots booked"
     val lines: List<String>, // "6:30 PM – 6:40 PM", ...
     val speech: String,      // "2 slots booked: 6:30 PM and 7:10 PM."
     val dateText: String?,
+    val lang: VoiceLanguage,
+    /** true: ring until Dismiss. false: tone + voice once, then stop by itself. */
+    val persistent: Boolean = kind != AlarmKind.NoneBooked,
+    val id: Long = System.nanoTime(),
 )
 
 /**
- * Rings until dismissed (FR-17 to FR-19): a few seconds of the alarm tone, then the spoken
- * message, over and over. Uses the alarm audio stream so it sounds on silent (NFR-4).
+ * The alert played at a check. Booked slots (and a failed login) ring until dismissed: a few
+ * seconds of alarm tone, then the spoken message, over and over (FR-17 to FR-19). A check with
+ * nothing booked gets one short tone and one spoken line. Everything uses the alarm audio stream
+ * so it sounds on silent (NFR-4).
  */
 class AlarmRingService : Service() {
 
@@ -56,6 +66,9 @@ class AlarmRingService : Service() {
         val current: StateFlow<AlarmInfo?> = _current.asStateFlow()
 
         fun ring(ctx: Context, info: AlarmInfo) {
+            // A booked alarm already ringing is never replaced by a "nothing booked" notice.
+            val now = _current.value
+            if (now != null && now.persistent && !info.persistent) return
             _current.value = info
             ctx.startForegroundService(Intent(ctx, AlarmRingService::class.java))
         }
@@ -66,10 +79,12 @@ class AlarmRingService : Service() {
         }
 
         private const val TONE_MS = 4_000L
+        private const val SHORT_TONE_MS = 1_800L
     }
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
     private var loop: Job? = null
+    private var playing: AlarmInfo? = null
     private var player: MediaPlayer? = null
     private var tts: TextToSpeech? = null
     private val ttsReady = CompletableDeferred<Boolean>()
@@ -88,7 +103,6 @@ class AlarmRingService : Service() {
         tts = TextToSpeech(this) { status ->
             val ok = status == TextToSpeech.SUCCESS
             if (ok) {
-                tts?.language = Locale.US
                 tts?.setAudioAttributes(alarmAudio)
                 tts?.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
                     override fun onStart(utteranceId: String?) {}
@@ -119,22 +133,32 @@ class AlarmRingService : Service() {
                 .newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "SlotWatcher:alarm")
                 .apply { acquire(60 * 60 * 1000L) }
         }
-        if (loop?.isActive != true) loop = scope.launch { ringLoop() }
+        if (playing?.id != info.id) {
+            loop?.cancel()
+            playing = info
+            loop = scope.launch { play(info) }
+        }
         return START_NOT_STICKY
     }
 
-    private suspend fun ringLoop() {
-        startVibration()
-        while (scope.isActive) {
-            if (current.value == null) break
-            playTone()
-            val info = current.value ?: break
-            speak(info.speech)
+    private suspend fun play(info: AlarmInfo) {
+        if (SettingsStore.settings.value.vibrate) startVibration(info.persistent)
+        if (!info.persistent) {
+            playTone(SHORT_TONE_MS)
+            speak(info)
+            delay(400)
+            if (current.value?.id == info.id) dismiss()
+            return
+        }
+        while (current.value?.id == info.id) {
+            playTone(TONE_MS)
+            if (current.value?.id != info.id) break
+            speak(info)
             delay(700)
         }
     }
 
-    private suspend fun playTone() {
+    private suspend fun playTone(ms: Long) {
         val p = player ?: runCatching {
             val uri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM)
                 ?: RingtoneManager.getDefaultUri(RingtoneManager.TYPE_RINGTONE)
@@ -146,21 +170,26 @@ class AlarmRingService : Service() {
             }
         }.getOrNull().also { player = it }
         if (p == null) {
-            delay(TONE_MS)
+            delay(ms)
             return
         }
         p.start()
-        delay(TONE_MS)
+        delay(ms)
         if (p.isPlaying) p.pause()
         p.seekTo(0)
     }
 
-    private suspend fun speak(text: String) {
+    private suspend fun speak(info: AlarmInfo) {
         val ok = withTimeoutOrNull(3_000) { ttsReady.await() } ?: false
         val engine = tts
         if (!ok || engine == null) return
+        val locale = if (info.lang == VoiceLanguage.Bangla) Locale("bn", "BD") else Locale.US
+        val res = engine.setLanguage(locale)
+        if (res == TextToSpeech.LANG_MISSING_DATA || res == TextToSpeech.LANG_NOT_SUPPORTED) {
+            engine.language = Locale.US // Bangla voice not installed: fall back to English.
+        }
         val done = CompletableDeferred<Unit>().also { spoken = it }
-        engine.speak(text, TextToSpeech.QUEUE_FLUSH, Bundle(), "booked")
+        engine.speak(info.speech, TextToSpeech.QUEUE_FLUSH, Bundle(), "alert-${info.id}")
         withTimeoutOrNull(20_000) { done.await() }
     }
 
@@ -172,15 +201,22 @@ class AlarmRingService : Service() {
             getSystemService(Vibrator::class.java)
         }
 
-    private fun startVibration() {
+    @Suppress("DEPRECATION")
+    private fun startVibration(repeat: Boolean) {
         runCatching {
-            vibrator().vibrate(VibrationEffect.createWaveform(longArrayOf(0, 800, 600), 0), alarmAudio)
+            val effect = if (repeat) {
+                VibrationEffect.createWaveform(longArrayOf(0, 800, 600), 0)
+            } else {
+                VibrationEffect.createWaveform(longArrayOf(0, 250, 150, 250), -1)
+            }
+            vibrator().vibrate(effect, alarmAudio)
         }
     }
 
     private fun stopRinging() {
         loop?.cancel()
         loop = null
+        playing = null
         runCatching { player?.stop() }
         player?.release()
         player = null
@@ -215,6 +251,7 @@ class AlarmRingService : Service() {
         val body = info?.lines?.joinToString("\n").orEmpty()
         return NotificationCompat.Builder(this, Notifications.CH_ALARM)
             .setSmallIcon(R.drawable.ic_stat_bell)
+            .setColor(0xFF532D80.toInt())
             .setContentTitle(info?.title ?: "Slot Watcher")
             .setContentText(body)
             .setStyle(NotificationCompat.BigTextStyle().bigText(body))
@@ -222,7 +259,7 @@ class AlarmRingService : Service() {
             .setCategory(NotificationCompat.CATEGORY_ALARM)
             .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
             .setOngoing(true)
-            .setFullScreenIntent(full, true)
+            .apply { if (info?.persistent != false) setFullScreenIntent(full, true) }
             .setContentIntent(full)
             .addAction(0, "Dismiss", dismiss)
             .build()

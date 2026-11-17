@@ -9,7 +9,9 @@ import android.os.IBinder
 import androidx.core.app.ServiceCompat
 import app.slotwatcher.Notifications
 import app.slotwatcher.alarm.AlarmInfo
+import app.slotwatcher.alarm.AlarmKind
 import app.slotwatcher.alarm.AlarmRingService
+import app.slotwatcher.data.SettingsStore
 import app.slotwatcher.data.Credentials
 import app.slotwatcher.data.CredentialStore
 import app.slotwatcher.data.Format
@@ -122,29 +124,52 @@ class CheckService : Service() {
 
         val outcome = CheckRunner.run(creds, date)
         val at = LocalDateTime.now()
-        val summary = handle(ctx, outcome, date, at)
+        val (summary, alert) = handle(ctx, outcome, date, at)
         Repo.setLastSummary("${Format.time(at)} — $summary")
 
-        val st = Repo.session.value ?: return
-        if (!st.active) {
+        // Schedule the next check first, so the announcement can say when it is.
+        var next: LocalDateTime? = null
+        val st = Repo.session.value
+        if (st != null && st.active) {
+            next = CheckScheduler.scheduleNext(ctx, st.session, at)
+            if (next == null) {
+                Repo.stopSession()
+                Notifications.showStatus(ctx, "Session finished · last: $summary", ongoing = false)
+            } else {
+                Notifications.showStatus(
+                    ctx,
+                    "Watching ${Format.shortDay(st.session.date)} · next check ${Format.time(next)} · last: $summary",
+                    ongoing = true,
+                )
+            }
+        } else if (st != null) {
             CheckScheduler.cancel(ctx)
-            return
         }
-        val next = CheckScheduler.scheduleNext(ctx, st.session, at)
-        if (next == null) {
-            Repo.stopSession()
-            Notifications.showStatus(ctx, "Session finished · last: $summary", ongoing = false)
-        } else {
-            Notifications.showStatus(
+
+        val settings = SettingsStore.settings.value
+        when {
+            alert != null -> AlarmRingService.ring(ctx, alert)
+            // Every check is announced (unless turned off): a short "no slot booked" alert.
+            outcome is CheckOutcome.Ok && settings.alertEveryCheck -> AlarmRingService.ring(
                 ctx,
-                "Watching ${Format.shortDay(st.session.date)} · next check ${Format.time(next)} · last: $summary",
-                ongoing = true,
+                AlarmInfo(
+                    kind = AlarmKind.NoneBooked,
+                    title = "No slot booked",
+                    lines = listOf(next?.let { "Next check at ${Format.time(it)}" } ?: "That was the last check"),
+                    speech = Format.speechNoneBooked(settings.voice, next),
+                    dateText = Format.day(date),
+                    lang = settings.voice,
+                ),
             )
         }
     }
 
-    /** Records the outcome, raises the alarm or a notification, and returns a one-line summary. */
-    private fun handle(ctx: Context, outcome: CheckOutcome, date: LocalDate, at: LocalDateTime): String {
+    /**
+     * Records the outcome and raises any notification. Returns a one-line summary and the
+     * ringing alarm to raise, if any.
+     */
+    private fun handle(ctx: Context, outcome: CheckOutcome, date: LocalDate, at: LocalDateTime): Pair<String, AlarmInfo?> {
+        val lang = SettingsStore.settings.value.voice
         when (outcome) {
             is CheckOutcome.Ok -> {
                 val r = outcome.result
@@ -156,18 +181,19 @@ class CheckService : Service() {
                 if (r.shownDate != null && r.shownDate != wanted) summary += " (page showed ${r.shownDate})"
 
                 Repo.addHistory(HistoryEntry(at, true, n, booked.map { it.label }, summary))
-                if (n > 0) {
-                    AlarmRingService.ring(
-                        ctx,
-                        AlarmInfo(
-                            title = Format.slotsBooked(n),
-                            lines = booked.map { "${Format.time(it.start)} – ${Format.time(it.end)}" },
-                            speech = Format.spokenMessage(n, booked.map { it.start }),
-                            dateText = Format.day(date),
-                        ),
+                val alert = if (n > 0) {
+                    AlarmInfo(
+                        kind = AlarmKind.Booked,
+                        title = Format.slotsBooked(n),
+                        lines = booked.map { "${Format.time(it.start)} – ${Format.time(it.end)}" },
+                        speech = Format.speechBooked(lang, n, booked.map { it.start }),
+                        dateText = Format.day(date),
+                        lang = lang,
                     )
+                } else {
+                    null
                 }
-                return summary
+                return summary to alert
             }
 
             is CheckOutcome.LoginFailed -> {
@@ -175,16 +201,14 @@ class CheckService : Service() {
                 // FR-23: a distinct alarm, and the session pauses until the login is fixed.
                 Repo.stopSession()
                 CheckScheduler.cancel(ctx)
-                AlarmRingService.ring(
-                    ctx,
-                    AlarmInfo(
-                        title = "Login failed",
-                        lines = listOf(outcome.message, "Watching is paused. Open Slot Watcher to fix the login."),
-                        speech = "Login failed. Slot Watcher is paused.",
-                        dateText = null,
-                    ),
+                return "login failed" to AlarmInfo(
+                    kind = AlarmKind.LoginFailed,
+                    title = "Login failed",
+                    lines = listOf(outcome.message, "Watching is paused. Open Slot Watcher to fix the login."),
+                    speech = Format.speechLoginFailed(lang),
+                    dateText = null,
+                    lang = lang,
                 )
-                return "login failed"
             }
 
             is CheckOutcome.Unreadable -> {
@@ -192,13 +216,13 @@ class CheckService : Service() {
                 Notifications.showProblem(
                     ctx, "Couldn't read slots at ${Format.time(at)} (${outcome.message}). Please check the panel by hand.",
                 )
-                return "couldn't read slots"
+                return "couldn't read slots" to null
             }
 
             is CheckOutcome.NetworkFailed -> {
                 Repo.addHistory(HistoryEntry(at, false, 0, emptyList(), "Check failed: ${outcome.message}"))
                 Notifications.showProblem(ctx, "Check at ${Format.time(at)} failed: ${outcome.message}")
-                return "check failed"
+                return "check failed" to null
             }
         }
     }

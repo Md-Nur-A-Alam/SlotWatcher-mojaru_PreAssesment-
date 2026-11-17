@@ -11,10 +11,11 @@ import android.provider.Settings
 import app.slotwatcher.Notifications
 import app.slotwatcher.check.CheckScheduler
 
-/** A setting the app needs to work reliably, and how to fix it. */
+/** A system setting the app needs to work reliably, whether it's on, and how to fix it. */
 data class Requirement(
     val title: String,
     val why: String,
+    val ok: Boolean,
     /** Either a runtime permission to request, or a settings screen to open. */
     val permission: String? = null,
     val settingsIntent: Intent? = null,
@@ -22,41 +23,42 @@ data class Requirement(
 
 object Permissions {
 
-    fun missing(ctx: Context): List<Requirement> {
+    fun all(ctx: Context): List<Requirement> {
         val out = mutableListOf<Requirement>()
         val pkg = Uri.parse("package:${ctx.packageName}")
 
-        if (!Notifications.canPost(ctx)) {
+        if (Build.VERSION.SDK_INT >= 33) {
             out += Requirement(
-                "Allow notifications",
+                "Notifications",
                 "Needed for the alarm and the status line.",
+                ok = Notifications.canPost(ctx),
                 permission = Manifest.permission.POST_NOTIFICATIONS,
             )
         }
-        if (!CheckScheduler.canScheduleExact(ctx) && Build.VERSION.SDK_INT >= 31) {
+        if (Build.VERSION.SDK_INT >= 31) {
             out += Requirement(
-                "Allow alarms & reminders",
-                "Without it, checks can run several minutes late.",
+                "Alarms & reminders",
+                "Runs each check exactly on time.",
+                ok = CheckScheduler.canScheduleExact(ctx),
                 settingsIntent = Intent(Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM, pkg),
             )
         }
-        val pm = ctx.getSystemService(PowerManager::class.java)
-        if (!pm.isIgnoringBatteryOptimizations(ctx.packageName)) {
+        out += Requirement(
+            "Unrestricted battery",
+            "Stops Android pausing checks while the screen is off.",
+            ok = ctx.getSystemService(PowerManager::class.java).isIgnoringBatteryOptimizations(ctx.packageName),
+            settingsIntent = Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS, pkg),
+        )
+        if (Build.VERSION.SDK_INT >= 34) {
             out += Requirement(
-                "Turn off battery optimisation",
-                "Stops Android from pausing checks while the screen is off.",
-                settingsIntent = Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS, pkg),
-            )
-        }
-        if (Build.VERSION.SDK_INT >= 34 &&
-            !ctx.getSystemService(NotificationManager::class.java).canUseFullScreenIntent()
-        ) {
-            out += Requirement(
-                "Allow full-screen alarm",
-                "Lets the alarm appear over the lock screen.",
+                "Full-screen alarm",
+                "Shows the alarm over the lock screen.",
+                ok = ctx.getSystemService(NotificationManager::class.java).canUseFullScreenIntent(),
                 settingsIntent = Intent(Settings.ACTION_MANAGE_APP_USE_FULL_SCREEN_INTENT, pkg),
             )
         }
         return out
     }
+
+    fun missing(ctx: Context): List<Requirement> = all(ctx).filterNot { it.ok }
 }

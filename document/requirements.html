@@ -58,7 +58,8 @@
 <main>
 
 <h1>Slot Watcher: Android App Requirements Specification</h1>
-<p class="byline">Version 1.0 · 18 Nov 2026 · Author: Md. Nur A Alam</p>
+<p class="byline">Version 1.1 · 18 Nov 2026 · Author: Md. Nur A Alam</p>
+<p class="note"><strong>Changes in 1.1:</strong> every check is now announced (FR-21), alert settings and a Bangla voice were added (FR-26 to FR-30), the screens follow the Mojaru brand theme (section 6), and the app has a Developer profile tab (FR-31).</p>
 
 <h2>1. Purpose</h2>
 <p>Slot Watcher is a personal Android app that logs in to the Mojaru Teacher Panel at times the examiner chooses and checks whether any pre-assessment slot is booked. If any are, it rings a spoken alarm such as “2 slots booked: 6:30 PM, 7:10 PM”.</p>
@@ -72,7 +73,10 @@
   <li>Setting up a watch session: date, start time, end time, gap</li>
   <li>Checking the Pre Assessment List automatically at each scheduled time</li>
   <li>A spoken alarm listing how many slots are booked and their times</li>
+  <li>A short spoken announcement after every check, including “no slot booked”</li>
   <li>A history of what each check found</li>
+  <li>Alert settings: announcements, vibration, English or Bangla voice, test alarm</li>
+  <li>A Developer tab with the developer’s profile and links</li>
 </ul>
 <h3>Out of scope</h3>
 <ul>
@@ -150,7 +154,8 @@
   <tr><td>FR-18</td><td>The alarm shows full-screen, even over the lock screen, with the count and the slot times.</td></tr>
   <tr><td>FR-19</td><td>The alarm keeps ringing and repeats the spoken message until the user taps Dismiss.</td></tr>
   <tr><td>FR-20</td><td>Dismissing the alarm doesn’t stop the session. The next check still runs.</td></tr>
-  <tr><td>FR-21</td><td>If no slot is booked, the app stays silent and only updates the status notification (“6:35 PM — 0 booked”).</td></tr>
+  <tr><td>FR-21</td><td>If no slot is booked, the app plays a short tone and says “No slot booked. Next check at 6:45 PM.” once, then stops by itself. It also updates the status notification (“6:35 PM — 0 booked”). This announcement can be turned off (FR-26).</td></tr>
+  <tr><td>FR-21a</td><td>A “no slot booked” announcement never replaces a booked alarm that is still ringing.</td></tr>
 </table></div>
 
 <h3>Errors</h3>
@@ -164,7 +169,23 @@
 <h3>History</h3>
 <div class="table-wrap"><table>
   <tr><th>ID</th><th>Requirement</th></tr>
-  <tr><td>FR-25</td><td>A History screen lists past checks, newest first, with booked count and slot times.</td></tr>
+  <tr><td>FR-25</td><td>A History screen lists past checks, newest first and grouped by day, with booked count and slot times. It shows today’s totals (checks, booked, problems) and asks before clearing.</td></tr>
+</table></div>
+
+<h3>Settings</h3>
+<div class="table-wrap"><table>
+  <tr><th>ID</th><th>Requirement</th></tr>
+  <tr><td>FR-26</td><td>“Announce every check” switch, on by default. When off, only booked slots and a failed login make a sound.</td></tr>
+  <tr><td>FR-27</td><td>“Vibrate” switch, on by default. Alerts vibrate with the sound.</td></tr>
+  <tr><td>FR-28</td><td>Voice language: English or Bangla. Bangla speaks times in Bangla, e.g. “২টি স্লট বুক হয়েছে। সময়: সন্ধ্যা ৬টা ৩০ মিনিট”. If the phone has no Bangla voice, English is used.</td></tr>
+  <tr><td>FR-29</td><td>“Play test alarm” plays a sample booked alarm with the current settings.</td></tr>
+  <tr><td>FR-30</td><td>A Reliability list shows each Android permission the app needs (notifications, alarms &amp; reminders, unrestricted battery, full-screen alarm), whether it is allowed, and an Allow button.</td></tr>
+</table></div>
+
+<h3>Developer profile</h3>
+<div class="table-wrap"><table>
+  <tr><th>ID</th><th>Requirement</th></tr>
+  <tr><td>FR-31</td><td>A Developer tab shows the developer’s photo, name, role, key numbers, about, experience, skills, research and education, with links to the portfolio, GitHub, LinkedIn, Facebook, YouTube, Codeforces, HackerRank and Beecrowd that open in the browser.</td></tr>
 </table></div>
 
 <h2>5. Non-functional requirements</h2>
@@ -180,21 +201,34 @@
   <tr><td>NFR-7</td><td>Load on Mojaru</td><td>At most one login and one list request per check. The minimum gap is 1 minute.</td></tr>
   <tr><td>NFR-8</td><td>Battery</td><td>A 3-hour session with a 10-minute gap uses under 3% of the battery.</td></tr>
   <tr><td>NFR-9</td><td>Platform</td><td>Android 8.0 (API 26) and later. Tested on the examiner’s phone and Android 14+.</td></tr>
-  <tr><td>NFR-10</td><td>Language</td><td>Screens in English. The spoken alarm in English, with Bangla as an option (see Open questions).</td></tr>
+  <tr><td>NFR-10</td><td>Language</td><td>Screens in English. The spoken alarm in English or Bangla (FR-28).</td></tr>
+  <tr><td>NFR-11</td><td>Design</td><td>Mojaru brand theme with light and dark modes, the Inter font, touch targets of at least 48dp, and text contrast of at least 4.5:1 in both modes (section 6).</td></tr>
 </table></div>
 
-<h2>6. Screens</h2>
-<p>The app has five screens. After the first setup, everyday use is just Home → New Session → Start.</p>
+<h2>6. Screens and design</h2>
+<p>A bottom bar switches between four tabs: Home, History, Settings and Developer. New Session and Account open full screen on top. After the first setup, everyday use is just Home → Start a session → Start watching.</p>
 <div class="table-wrap"><table>
   <tr><th>Screen</th><th>Contents</th><th>Actions</th></tr>
-  <tr><td>Account (first launch)</td><td>Email/Mobile, Password (masked, show/hide)</td><td>Test &amp; Save</td></tr>
-  <tr><td>Home</td><td>Current session (date, window, gap), next check time, last result (“6:35 PM — 2 booked: 6:30, 7:10”), permission warnings</td><td>New Session · Stop · Check now · History · Settings</td></tr>
-  <tr><td>New Session</td><td>Date picker, Start time, End time, Gap (minutes, default 10), preview of all check times</td><td>Start</td></tr>
-  <tr><td>Alarm (full-screen)</td><td>“2 slots booked”, the list of slot times, the date</td><td>Dismiss</td></tr>
-  <tr><td>History</td><td>One row per check: time, booked count, slot times, OK/error</td><td>Clear history</td></tr>
+  <tr><td>Account (first launch)</td><td>Welcome header with the logo, Email or mobile, Password (show/hide), optional list address under Advanced, a note on how the password is stored</td><td>Sign in &amp; continue</td></tr>
+  <tr><td>Home</td><td>Purple header: status pill (Watching / Idle), live countdown to the next check, “check 6 of 18” with a progress bar. Below: permission warnings, current session (date, window, gap), last check with the booked slot times</td><td>Start a session · Check now · Stop · Start a different session</td></tr>
+  <tr><td>New Session</td><td>Date, first check, last check, gap presets (5, 10, 15, 20, 30 min or custom), preview of every check time and which ones are already past</td><td>Start watching</td></tr>
+  <tr><td>History</td><td>Today’s totals, then checks grouped by day: icon, result, time and booked slot chips</td><td>Clear history</td></tr>
+  <tr><td>Settings</td><td>Alerts (announce every check, vibrate, voice language), Mojaru account, Reliability permissions, About (version, source code)</td><td>Play test alarm · Change login · Remove login · Allow</td></tr>
+  <tr><td>Developer</td><td>Photo, name, role, key numbers, about, experience, skills, research, education, profile links</td><td>View portfolio · open each link</td></tr>
+  <tr><td>Alarm (full-screen)</td><td>Pulsing bell, “2 slots booked”, the date, each slot time</td><td>Dismiss</td></tr>
 </table></div>
-<p>Settings has the alarm sound, voice language, the number of times to repeat the voice, and a link to edit the account.</p>
 <p>A status notification stays visible while a session runs, for example “Watching 18 Nov · next check 6:45 PM · last: 0 booked”.</p>
+<h3>Design system</h3>
+<p>The app uses the Mojaru brand, taken from mojaru.com’s stylesheet.</p>
+<div class="table-wrap"><table>
+  <tr><th>Token</th><th>Value</th><th>Used for</th></tr>
+  <tr><td>Primary</td><td>Deep purple #532D80</td><td>Buttons, selected tab, headings</td></tr>
+  <tr><td>Secondary</td><td>Violet #6F39B7</td><td>Header gradient</td></tr>
+  <tr><td>Accent</td><td>Yellow #FFCE39 on navy #1A2238</td><td>Main call to action on purple, Watching pill, alarm</td></tr>
+  <tr><td>Booked</td><td>Coral tones with a bell icon</td><td>Booked slot chips and results</td></tr>
+  <tr><td>Font</td><td>Inter (bundled)</td><td>All text</td></tr>
+  <tr><td>Spacing</td><td>4/8dp scale, 20dp side gutter</td><td>All layouts</td></tr>
+</table></div>
 
 <h2>7. Technical approach</h2>
 <p>Mojaru has no public API, so the app has to read the same pages the browser does. The first development task is to choose between the two ways of doing that.</p>
@@ -248,7 +282,8 @@
 <p>The app is done when all of these pass on the examiner’s phone.</p>
 <ul class="check">
   <li>Date 18-11-2026, 6:25 PM to 9:15 PM, gap 10 shows 18 check times from 6:25 to 9:15 PM, and checks run at those times within 1 minute.</li>
-  <li>With 0 booked, no alarm rings, and the notification shows “0 booked” after each check.</li>
+  <li>With 0 booked, each check says “No slot booked. Next check at …” once and stops by itself, and the notification shows “0 booked”. With “Announce every check” off, it stays silent.</li>
+  <li>With the voice set to Bangla, the alarm speaks the slot times in Bangla.</li>
   <li>When 2 slots are booked (e.g. 18:30 and 19:10), the alarm rings and says “2 slots booked: 6:30 PM and 7:10 PM”, with the screen locked and the phone on silent.</li>
   <li>The alarm keeps ringing until Dismiss is tapped. It rings again at the next check while the slots are still booked.</li>
   <li>Checks continue on time with the screen off for the whole 3-hour session, and after a phone restart.</li>
@@ -261,7 +296,6 @@
 <h2>9. Open questions</h2>
 <ul class="check">
   <li>What does a booked slot’s Slot Status say (“booked”, “upcoming”, something else)? A screenshot of a booked row would settle this.</li>
-  <li>Should the voice speak English, Bangla, or both?</li>
   <li>Should the alarm also show the participant’s name for each booked slot, or only the time?</li>
   <li>Does the Pre Assessment List show other dates when the date box is changed, or only today?</li>
   <li>Does the panel log you out after a while, or allow more than one login at a time (phone app and Chrome together)?</li>
