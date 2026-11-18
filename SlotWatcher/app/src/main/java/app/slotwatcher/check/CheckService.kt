@@ -43,17 +43,24 @@ sealed interface CheckOutcome {
 
 /** One check, with retries for network trouble (FR-22). */
 object CheckRunner {
-    suspend fun run(creds: Credentials, date: LocalDate, attempts: Int = 4, retryDelayMs: Long = 30_000): CheckOutcome {
+    suspend fun run(
+        ctx: Context,
+        creds: Credentials,
+        date: LocalDate,
+        attempts: Int = 4,
+        retryDelayMs: Long = 30_000,
+    ): CheckOutcome {
         var lastError = "unknown error"
         repeat(attempts) { i ->
             try {
-                val r = withContext(Dispatchers.IO) {
-                    MojaruClient().check(creds.login, creds.password, creds.listUrl, date)
-                }
-                return if (r.recognized) {
-                    CheckOutcome.Ok(r)
-                } else {
-                    CheckOutcome.Unreadable("No slot table or Booked Slots counter on the page")
+                val client = MojaruClient()
+                val r = client.check(ctx, creds.login, creds.password, creds.listUrl, date)
+                client.lastPageHtml?.let { Diagnostics.saveLastPage(ctx, it, r) }
+                return when {
+                    !r.recognized -> CheckOutcome.Unreadable("No slot table or Booked Slots counter on the page")
+                    // Never report "nothing booked" from a table that didn't load.
+                    !r.trustworthy -> CheckOutcome.Unreadable("The slot table didn't load")
+                    else -> CheckOutcome.Ok(r)
                 }
             } catch (e: LoginException) {
                 return CheckOutcome.LoginFailed(e.message ?: "Login failed")
@@ -122,7 +129,7 @@ class CheckService : Service() {
             return
         }
 
-        val outcome = CheckRunner.run(creds, date)
+        val outcome = CheckRunner.run(ctx, creds, date)
         val at = LocalDateTime.now()
         val (summary, alert) = handle(ctx, outcome, date, at)
         Repo.setLastSummary("${Format.time(at)} — $summary")
@@ -180,7 +187,8 @@ class CheckService : Service() {
                 val wanted = date.format(SlotParser.DMY_FORMAT)
                 if (r.shownDate != null && r.shownDate != wanted) summary += " (page showed ${r.shownDate})"
 
-                Repo.addHistory(HistoryEntry(at, true, n, booked.map { it.label }, summary))
+                val read = if (r.slots.isNotEmpty()) " · ${r.slots.size} slots read" else " · from the Booked Slots counter"
+                Repo.addHistory(HistoryEntry(at, true, n, booked.map { it.label }, summary + read))
                 val alert = if (n > 0) {
                     AlarmInfo(
                         kind = AlarmKind.Booked,
@@ -216,7 +224,15 @@ class CheckService : Service() {
                 Notifications.showProblem(
                     ctx, "Couldn't read slots at ${Format.time(at)} (${outcome.message}). Please check the panel by hand.",
                 )
-                return "couldn't read slots" to null
+                // A short spoken warning, so an unreadable page is never mistaken for "nothing booked".
+                return "couldn't read slots" to AlarmInfo(
+                    kind = AlarmKind.Problem,
+                    title = "Couldn't read the slots",
+                    lines = listOf(outcome.message, "Please check the panel by hand."),
+                    speech = Format.speechUnreadable(lang),
+                    dateText = Format.day(date),
+                    lang = lang,
+                )
             }
 
             is CheckOutcome.NetworkFailed -> {

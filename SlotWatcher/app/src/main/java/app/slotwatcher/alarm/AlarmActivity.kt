@@ -30,6 +30,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.CheckCircle
+import androidx.compose.material.icons.rounded.ErrorOutline
 import androidx.compose.material.icons.rounded.LockPerson
 import androidx.compose.material.icons.rounded.NotificationsActive
 import androidx.compose.material3.Button
@@ -105,6 +106,7 @@ private fun AlarmScreen(info: AlarmInfo, onDismiss: () -> Unit) {
     val icon = when (info.kind) {
         AlarmKind.LoginFailed -> Icons.Rounded.LockPerson
         AlarmKind.NoneBooked -> Icons.Rounded.CheckCircle
+        AlarmKind.Problem -> Icons.Rounded.ErrorOutline
         else -> Icons.Rounded.NotificationsActive
     }
 

@@ -39,7 +39,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
 import java.util.Locale
 
-enum class AlarmKind { Booked, NoneBooked, LoginFailed, Test }
+enum class AlarmKind { Booked, NoneBooked, Problem, LoginFailed, Test }
 
 data class AlarmInfo(
     val kind: AlarmKind,
@@ -49,7 +49,7 @@ data class AlarmInfo(
     val dateText: String?,
     val lang: VoiceLanguage,
     /** true: ring until Dismiss. false: tone + voice once, then stop by itself. */
-    val persistent: Boolean = kind != AlarmKind.NoneBooked,
+    val persistent: Boolean = kind != AlarmKind.NoneBooked && kind != AlarmKind.Problem,
     val id: Long = System.nanoTime(),
 )
 

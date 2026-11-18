@@ -72,6 +72,40 @@ class SlotParserTest {
         assertEquals(3, r.totalBooked)
     }
 
+    /** The bug in assets/wrong_info.jpeg: raw HTML before the page's JavaScript fills it in. */
+    @Test
+    fun `empty table with zero counters is not trusted as no bookings`() {
+        val raw = Jsoup.parse(
+            """
+            <div><span>Total Slots</span><div>0</div></div>
+            <div><span>Booked Slots</span><div>0</div></div>
+            <table><thead><tr><th>Date / Time Slot</th><th>Slot Status</th></tr></thead><tbody></tbody></table>
+            """.trimIndent(),
+        )
+        val r = SlotParser.parse(raw, day)
+        assertTrue(r.recognized)
+        // Total Slots 0 really means no slots that day...
+        assertTrue(r.trustworthy)
+        // ...but without a Total Slots counter, an empty table means it didn't load.
+        val noTotal = Jsoup.parse("<div><span>Booked Slots</span><div>0</div></div><table><tbody></tbody></table>")
+        assertFalse(SlotParser.parse(noTotal, day).trustworthy)
+        val withTotal = Jsoup.parse(
+            "<div><span>Total Slots</span><div>18</div></div><div><span>Booked Slots</span><div>0</div></div><table><tbody></tbody></table>",
+        )
+        assertFalse(SlotParser.parse(withTotal, day).trustworthy)
+    }
+
+    /** The rendered page from the screenshot: counter says 4, three booked rows visible. */
+    @Test
+    fun `booked counter higher than visible rows wins`() {
+        val rows = row("18:30", "18:40", "booked") + row("18:40", "18:50", "booked") +
+            row("18:50", "19:00", "booked") + row("19:00", "19:10", "available")
+        val r = SlotParser.parse(page(4, rows), day)
+        assertTrue(r.trustworthy)
+        assertEquals(3, r.bookedSlots.size)
+        assertEquals(4, r.totalBooked)
+    }
+
     @Test
     fun `unrelated page is not recognized`() {
         assertFalse(SlotParser.parse(Jsoup.parse("<h1>Dashboard</h1>"), day).recognized)

@@ -1,5 +1,8 @@
 package app.slotwatcher.net
 
+import android.content.Context
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import okhttp3.Cookie
 import okhttp3.CookieJar
 import okhttp3.FormBody
@@ -28,7 +31,7 @@ class MojaruClient(private val base: String = BASE) {
 
     companion object {
         const val BASE = "https://teacher.mojaru.com"
-        private const val USER_AGENT =
+        const val USER_AGENT =
             "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) " +
                 "Chrome/126.0 Mobile Safari/537.36"
     }
@@ -111,21 +114,49 @@ class MojaruClient(private val base: String = BASE) {
         return best?.absUrl("href")?.takeIf { it.isNotBlank() }
     }
 
-    /** Full check: log in, open the list for [date], read it. */
-    fun check(user: String, password: String, listUrlOverride: String?, date: LocalDate): ParseResult {
-        val landing = login(user, password)
-        val listUrl = listUrlOverride?.trim()?.takeIf { it.isNotEmpty() }
-            ?: findListUrl(landing)
-            ?: throw LayoutException("Couldn't find the Pre Assessment List link after login")
+    /** The page the last [check] read, for the diagnostics share in Settings. */
+    @Volatile
+    var lastPageHtml: String? = null
+        private set
 
-        var doc = get(listUrl)
+    /**
+     * Full check: log in, open the list for [date], read it.
+     *
+     * With a [ctx], the list is loaded in a hidden WebView so the page's JavaScript fills in the
+     * counters and slot table first (the raw HTML has them empty). Without one (unit tests), or
+     * if the WebView fails, the raw HTML is parsed instead.
+     */
+    suspend fun check(ctx: Context?, user: String, password: String, listUrlOverride: String?, date: LocalDate): ParseResult {
         val wanted = date.format(SlotParser.DMY_FORMAT)
-        val dateInput = SlotParser.findDateInput(doc)
-        if (dateInput != null && dateInput.attr("value").trim() != wanted) {
-            dateUrl(doc, dateInput, wanted)?.let { doc = get(it) }
+        val (listUrl, staticDoc) = withContext(Dispatchers.IO) {
+            val landing = login(user, password)
+            val url = listUrlOverride?.trim()?.takeIf { it.isNotEmpty() }
+                ?: findListUrl(landing)
+                ?: throw LayoutException("Couldn't find the Pre Assessment List link after login")
+            var doc = get(url)
+            val dateInput = SlotParser.findDateInput(doc)
+            if (dateInput != null && dateInput.attr("value").trim() != wanted) {
+                dateUrl(doc, dateInput, wanted)?.let { doc = get(it) }
+            }
+            doc.location().ifBlank { url } to doc
         }
-        return SlotParser.parse(doc, date)
+
+        if (ctx != null) {
+            val rendered = runCatching {
+                PageRenderer.render(ctx, listUrl, cookies(), wanted, USER_AGENT)
+            }.getOrNull()
+            if (rendered != null && !rendered.url.contains("/login")) {
+                lastPageHtml = rendered.html
+                val doc = Jsoup.parse(rendered.html, rendered.url)
+                return SlotParser.parse(doc, date).copy(source = ParseSource.Rendered)
+            }
+        }
+        lastPageHtml = staticDoc.outerHtml()
+        return SlotParser.parse(staticDoc, date).copy(source = ParseSource.Static)
     }
+
+    /** Session cookies from the login, to hand to the WebView. */
+    fun cookies(): List<Cookie> = synchronized(cookieStore) { cookieStore.values.toList() }
 
     /**
      * Builds the URL that shows another date: submits the date box's GET form if it has one,

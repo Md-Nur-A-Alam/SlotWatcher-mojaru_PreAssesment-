@@ -54,6 +54,11 @@ object Format {
             "কোনো স্লট বুক হয়নি।" + (next?.let { " পরের চেক ${bnTime(it.toLocalTime())}।" } ?: " এটাই ছিল শেষ চেক।")
     }
 
+    fun speechUnreadable(lang: VoiceLanguage): String = when (lang) {
+        VoiceLanguage.English -> "Could not read the slot list. Please check the panel."
+        VoiceLanguage.Bangla -> "স্লটের তালিকা পড়া যায়নি। প্যানেলটি দেখে নিন।"
+    }
+
     fun speechLoginFailed(lang: VoiceLanguage): String = when (lang) {
         VoiceLanguage.English -> "Login failed. Slot Watcher is paused."
         VoiceLanguage.Bangla -> "লগইন ব্যর্থ হয়েছে। স্লট ওয়াচার বন্ধ রাখা হয়েছে।"

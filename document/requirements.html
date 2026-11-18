@@ -58,7 +58,8 @@
 <main>
 
 <h1>Slot Watcher: Android App Requirements Specification</h1>
-<p class="byline">Version 1.1 · 18 Nov 2026 · Author: Md. Nur A Alam</p>
+<p class="byline">Version 1.2 · 18 Nov 2026 · Author: Md. Nur A Alam</p>
+<p class="note"><strong>Changes in 1.2:</strong> fixed a wrong “No slot booked” result. The panel fills in its counters and slot table with JavaScript, so the app now reads the list in a hidden in-app browser (FR-11, section 7). An empty table is no longer trusted as “nothing booked” (FR-24a), the booked count uses the higher of the counter and the booked rows (FR-12), and Settings can share the last page read (FR-32).</p>
 <p class="note"><strong>Changes in 1.1:</strong> every check is now announced (FR-21), alert settings and a Bangla voice were added (FR-26 to FR-30), the screens follow the Mojaru brand theme (section 6), and the app has a Developer profile tab (FR-31).</p>
 
 <h2>1. Purpose</h2>
@@ -89,7 +90,8 @@
 <ul>
   <li>The panel at teacher.mojaru.com stays reachable and its pages keep their current layout.</li>
   <li>The Pre Assessment List can show any chosen date. Its date box defaults to today.</li>
-  <li>A slot counts as booked when its Slot Status is not “available” (for example “booked” or “upcoming”). This needs checking against a real booked slot.</li>
+  <li>A booked slot’s Slot Status reads “booked” (confirmed from a screenshot of the panel).</li>
+  <li>The panel fills in its counters and slot table with JavaScript after the page loads, so the raw HTML alone can’t be read.</li>
 </ul>
 
 <h2>3. Current manual workflow</h2>
@@ -139,10 +141,10 @@
 <h3>Each check</h3>
 <div class="table-wrap"><table>
   <tr><th>ID</th><th>Requirement</th></tr>
-  <tr><td>FR-11</td><td>At each check time the app logs in (or reuses a valid session) and opens the Pre Assessment List for the chosen date.</td></tr>
-  <tr><td>FR-12</td><td>It reads the Booked Slots count and the table rows, and records each booked slot’s time range (e.g. 18:30 - 18:40).</td></tr>
-  <tr><td>FR-13</td><td>A slot counts as booked when its Slot Status is anything other than “available” or “expired”.</td></tr>
-  <tr><td>FR-14</td><td>If the table spans several pages, the app reads all of them.</td></tr>
+  <tr><td>FR-11</td><td>At each check time the app logs in and opens the Pre Assessment List in a hidden in-app browser, so the page’s JavaScript fills in the counters and slot table. It sets the date box to the chosen date and waits until the table has finished loading. If that fails, it falls back to the page’s raw HTML.</td></tr>
+  <tr><td>FR-12</td><td>It reads the Booked Slots count and the table rows, and records each booked slot’s time range (e.g. 18:30 - 18:40). The booked total is the higher of the Booked Slots counter and the number of booked rows.</td></tr>
+  <tr><td>FR-13</td><td>A slot counts as booked when its Slot Status says “booked” or anything else except “available”, “expired”, “completed”, “present” or “absent”.</td></tr>
+  <tr><td>FR-14</td><td>If the table is split into pages, the app shows all rows on one page before reading.</td></tr>
   <tr><td>FR-15</td><td>Each check is logged with its time, booked count, booked slot times and result (OK / error).</td></tr>
 </table></div>
 
@@ -163,7 +165,8 @@
   <tr><th>ID</th><th>Requirement</th></tr>
   <tr><td>FR-22</td><td>No internet or the site doesn’t respond: retry up to 3 times, 30 seconds apart, then notify “Check at 6:35 PM failed”.</td></tr>
   <tr><td>FR-23</td><td>Login rejected (e.g. password changed): ring a distinct alarm saying “Login failed” and pause the session.</td></tr>
-  <tr><td>FR-24</td><td>Page layout not recognised: notify “Couldn’t read slots” so the user can check by hand.</td></tr>
+  <tr><td>FR-24</td><td>Page not readable: notify “Couldn’t read slots” and say “Could not read the slot list. Please check the panel.” once, so the user checks by hand.</td></tr>
+  <tr><td>FR-24a</td><td>An empty slot table is never reported as “no slot booked” unless the page says Total Slots is 0. Otherwise it is treated as not readable (FR-24).</td></tr>
 </table></div>
 
 <h3>History</h3>
@@ -180,6 +183,7 @@
   <tr><td>FR-28</td><td>Voice language: English or Bangla. Bangla speaks times in Bangla, e.g. “২টি স্লট বুক হয়েছে। সময়: সন্ধ্যা ৬টা ৩০ মিনিট”. If the phone has no Bangla voice, English is used.</td></tr>
   <tr><td>FR-29</td><td>“Play test alarm” plays a sample booked alarm with the current settings.</td></tr>
   <tr><td>FR-30</td><td>A Reliability list shows each Android permission the app needs (notifications, alarms &amp; reminders, unrestricted battery, full-screen alarm), whether it is allowed, and an Allow button.</td></tr>
+  <tr><td>FR-32</td><td>“Share last checked page” sends the page the last check read (kept in the app’s private storage) through the Android share sheet, to diagnose a wrong result. It warns that the page contains participant names.</td></tr>
 </table></div>
 
 <h3>Developer profile</h3>
@@ -198,7 +202,7 @@
   <tr><td>NFR-4</td><td>Alarm audibility</td><td>The alarm uses the alarm audio channel, so it rings even when the phone is on silent or Do Not Disturb.</td></tr>
   <tr><td>NFR-5</td><td>Security</td><td>The password is stored encrypted with the Android Keystore. It never leaves the phone except to teacher.mojaru.com over HTTPS.</td></tr>
   <tr><td>NFR-6</td><td>Privacy</td><td>No analytics, ads or third-party servers. Participant names and mobile numbers aren’t stored.</td></tr>
-  <tr><td>NFR-7</td><td>Load on Mojaru</td><td>At most one login and one list request per check. The minimum gap is 1 minute.</td></tr>
+  <tr><td>NFR-7</td><td>Load on Mojaru</td><td>One login and one list page load per check (plus the requests the page itself makes). The minimum gap is 1 minute.</td></tr>
   <tr><td>NFR-8</td><td>Battery</td><td>A 3-hour session with a 10-minute gap uses under 3% of the battery.</td></tr>
   <tr><td>NFR-9</td><td>Platform</td><td>Android 8.0 (API 26) and later. Tested on the examiner’s phone and Android 14+.</td></tr>
   <tr><td>NFR-10</td><td>Language</td><td>Screens in English. The spoken alarm in English or Bangla (FR-28).</td></tr>
@@ -231,13 +235,16 @@
 </table></div>
 
 <h2>7. Technical approach</h2>
-<p>Mojaru has no public API, so the app has to read the same pages the browser does. The first development task is to choose between the two ways of doing that.</p>
+<p>Mojaru has no public API, so the app reads the same pages the browser does. It combines direct HTTP for the login with a hidden WebView for the slot list.</p>
 <div class="table-wrap"><table>
-  <tr><th>Option</th><th>How it works</th><th>Strengths</th><th>Weaknesses</th></tr>
-  <tr><td>A. Direct HTTP (preferred)</td><td>Capture the login and slot-list requests the panel makes (Chrome DevTools → Network), then call them from the app with OkHttp/Retrofit and parse the response</td><td>Fast, light on battery, reliable in the background</td><td>Needs investigation first. Breaks if Mojaru changes its API</td></tr>
-  <tr><td>B. Hidden WebView</td><td>Load the pages in an invisible WebView, fill the login form, read the slot table with JavaScript</td><td>Works without knowing the API</td><td>Heavier and less reliable with the screen off. Breaks if the page layout changes</td></tr>
+  <tr><th>Step</th><th>How it works</th><th>Why</th></tr>
+  <tr><td>1. Log in (HTTP)</td><td>Load <code>/teacher/login</code>, read its hidden <code>_token</code>, post <code>email_or_mobile</code> and <code>password</code> to <code>/teacher/post/login</code> with OkHttp</td><td>Fast, and a rejected login is easy to detect</td></tr>
+  <tr><td>2. Find the list (HTTP)</td><td>Take the Pre Assessment List link from the dashboard menu, or the address set under Advanced</td><td>Survives small menu changes</td></tr>
+  <tr><td>3. Render the list (WebView)</td><td>Copy the login cookies into a hidden WebView, open the list, set the date box, wait until no requests are running and the page stops changing, show all table rows</td><td>The panel fills in its counters and slot table with JavaScript; the raw HTML has them empty (the cause of a wrong “No slot booked” in v1.1)</td></tr>
+  <tr><td>4. Read (Jsoup)</td><td>Parse the rendered page: Booked Slots and Total Slots counters, each row’s time range and Slot Status</td><td>Matches content, not CSS classes, so small layout changes don’t break it</td></tr>
 </table></div>
-<p><strong>Proposed stack:</strong> Kotlin, Jetpack Compose UI, AlarmManager <code>setExactAndAllowWhileIdle</code> to wake the app for each check, a short foreground service to run the check, Android TextToSpeech for the voice, Room for history, and DataStore with the Android Keystore for the login.</p>
+<p>If the WebView fails, the app falls back to the raw HTML, and an empty table is then reported as “couldn’t read”, never as “nothing booked”.</p>
+<p><strong>Stack:</strong> Kotlin, Jetpack Compose (Material 3), AlarmManager alarm-clock alarms to wake the app for each check, a short foreground service to run the check, Android WebView, OkHttp and Jsoup, Android TextToSpeech for the voice, and EncryptedSharedPreferences (Android Keystore) for the login.</p>
 
 <figure>
 <svg viewBox="0 0 760 396" role="img" aria-label="Booked slots ring the alarm on every check until the end time" font-size="13" font-family="system-ui, sans-serif">
@@ -291,11 +298,12 @@
   <li>With mobile data and Wi-Fi off, a check retries and then shows “Check failed” without crashing.</li>
   <li>The password can’t be read from the app’s storage files.</li>
   <li>Stop cancels all remaining checks.</li>
+  <li>With 4 slots booked on the panel (Booked Slots 4), a check reports 4 booked and lists the booked times it can see. It never says “No slot booked” while the panel shows bookings.</li>
+  <li>If the slot table doesn’t load, the app says it couldn’t read the slot list instead of “No slot booked”.</li>
 </ul>
 
 <h2>9. Open questions</h2>
 <ul class="check">
-  <li>What does a booked slot’s Slot Status say (“booked”, “upcoming”, something else)? A screenshot of a booked row would settle this.</li>
   <li>Should the alarm also show the participant’s name for each booked slot, or only the time?</li>
   <li>Does the Pre Assessment List show other dates when the date box is changed, or only today?</li>
   <li>Does the panel log you out after a while, or allow more than one login at a time (phone app and Chrome together)?</li>

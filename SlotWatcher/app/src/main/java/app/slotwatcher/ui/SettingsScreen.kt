@@ -20,6 +20,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.Logout
 import androidx.compose.material.icons.rounded.AccountCircle
 import androidx.compose.material.icons.rounded.BatteryChargingFull
+import androidx.compose.material.icons.rounded.BugReport
+import app.slotwatcher.check.Diagnostics
 import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.Code
 import androidx.compose.material.icons.rounded.Info
@@ -187,6 +189,15 @@ fun SettingsScreen(onAccount: () -> Unit, onSignedOut: () -> Unit) {
                 NavRow(Icons.Rounded.Info, "Slot Watcher $version", "Watches Mojaru pre-assessment slot bookings", onClick = null)
                 HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
                 NavRow(Icons.Rounded.Code, "Source code", "GitHub repository", onClick = { uri.openUri(REPO_URL) })
+                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                val hasPage = remember(tick) { Diagnostics.hasLastPage(ctx) }
+                NavRow(
+                    Icons.Rounded.BugReport,
+                    "Share last checked page",
+                    if (hasPage) "Send the page the app last read, if a result looks wrong. It includes participant names."
+                    else "Available after the first check.",
+                    onClick = if (hasPage) ({ Diagnostics.shareIntent(ctx)?.let { runCatching { ctx.startActivity(it) } } }) else null,
+                )
             }
             Spacer(Modifier.height(Space.xl))
         }

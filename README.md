@@ -10,10 +10,11 @@ An Android app for Mojaru pre-assessment examiners. It signs in to the Mojaru Te
 
 1. Sign in once with your Mojaru Teacher Panel email or mobile and password.
 2. Start a session: pick the date, the first and last check time, and the gap. For example, 6:25 PM to 9:15 PM every 10 minutes gives 18 checks: 6:25, 6:35 … 9:05, 9:15.
-3. At each check time the app signs in, opens the Pre Assessment List for that date and reads the booked slots.
+3. At each check time the app signs in and opens the Pre Assessment List in a hidden in-app browser. The panel fills in its counters and slot table with JavaScript, so the app lets the page finish loading, sets the date, shows all rows, then reads the booked slots. The booked count is the higher of the Booked Slots counter and the booked rows found.
 4. It announces the result:
    - **Slots booked:** alarm tone and spoken slot times, repeating until you tap Dismiss. It shows full-screen, even over the lock screen.
    - **Nothing booked:** one short tone and "No slot booked. Next check at 6:45 PM." This can be turned off.
+   - **Slot list couldn't be read:** "Could not read the slot list. Please check the panel." An empty or unloaded table is never reported as "no slot booked".
    - **Login rejected:** a separate "Login failed" alarm, and watching pauses.
    - **Network trouble:** up to 3 retries, 30 seconds apart, then a notification.
 
@@ -26,6 +27,7 @@ Alerts use the alarm volume, so they sound even when the phone is on silent.
 - History of every check, grouped by day, with today's totals.
 - Voice in English or Bangla (Bangla needs the Bangla voice in Google Text-to-speech).
 - Settings for announcements, vibration and voice, plus a test alarm.
+- "Share last checked page" in Settings, for diagnosing a wrong result.
 - Reliability checklist for the Android permissions the app needs, each with an Allow button.
 - Mojaru brand theme (purple `#532D80`, yellow `#FFCE39`, Inter font) with light and dark modes.
 - Developer profile tab.
@@ -67,18 +69,23 @@ document/requirements.html     Requirements specification
 assets/                        Logo, developer photo, screenshots of the manual workflow
 SlotWatcher/                   Android app (Kotlin, Jetpack Compose, Material 3)
   app/src/main/java/app/slotwatcher/
-    net/      MojaruClient (login + list page), SlotParser (reads booked slots)
-    check/    CheckTimes, CheckScheduler (exact alarms), CheckService, receivers
+    net/      MojaruClient (login + list page), PageRenderer (hidden WebView that runs the
+              page's JavaScript), SlotParser (reads booked slots)
+    check/    CheckTimes, CheckScheduler (exact alarms), CheckService, receivers, Diagnostics
     alarm/    AlarmRingService (tone + voice), AlarmActivity (full-screen alarm)
     data/     Encrypted login, session + history, settings, text formatting
     ui/       Theme and screens: Home, New session, History, Settings, Developer, Account
-  app/src/test/   Unit tests for check times, the slot parser and spoken messages
-  tools/probe.ps1  Saves the real list page so the parser can be checked against it
+  app/src/test/   Unit tests for check times, the slot parser (including the empty-table case)
+                  and spoken messages
+  tools/probe.ps1  Saves the panel's raw pages from a computer
 ```
 
-## Checking the parser against the real page
+## When a result looks wrong
 
-The slot reader was written from screenshots of the panel. To check it against the real page, run this from the repo root:
+1. In the app, open **History**. Each check shows what it read, for example "18 slots read".
+2. Go to **Settings → About → Share last checked page** and send the file. It's the exact page the last check read, with a header noting the counters and rows found. It contains participant names, so share it privately.
+
+You can also save the panel's pages from a computer. This saves the raw HTML only, before the page's JavaScript runs. Run this from the repo root:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File SlotWatcher\tools\probe.ps1

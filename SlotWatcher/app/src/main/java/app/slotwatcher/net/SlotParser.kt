@@ -16,6 +16,9 @@ data class Slot(
     val label: String get() = "$start - $end"
 }
 
+/** Where the parsed HTML came from: the page after its JavaScript ran, or the raw server HTML. */
+enum class ParseSource { Rendered, Static }
+
 data class ParseResult(
     /** The "Booked Slots" counter from the At a Glance card, if found. */
     val bookedCounter: Int?,
@@ -23,13 +26,26 @@ data class ParseResult(
     val slots: List<Slot>,
     /** The date the page's date box showed (dd-MM-yyyy), if found. */
     val shownDate: String?,
+    /** The "Total Slots" counter, if found. */
+    val totalCounter: Int? = null,
+    val source: ParseSource = ParseSource.Static,
 ) {
     val bookedSlots: List<Slot> get() = slots.filter { it.booked }
 
     val recognized: Boolean get() = bookedCounter != null || slots.isNotEmpty()
 
-    /** Rows are the source of truth when the table was read; the counter is the fallback. */
-    val totalBooked: Int get() = if (slots.isNotEmpty()) bookedSlots.size else (bookedCounter ?: 0)
+    /**
+     * Whether "nothing booked" can be believed. An empty slot table while the page doesn't
+     * say it has 0 slots means the table never loaded, not that nothing is booked.
+     */
+    val trustworthy: Boolean
+        get() = recognized && (slots.isNotEmpty() || (bookedCounter ?: 0) > 0 || totalCounter == 0)
+
+    /**
+     * Booked rows, or the Booked Slots counter if it's higher (a row can be off-screen on another
+     * table page). Missing a booking is worse than over-counting.
+     */
+    val totalBooked: Int get() = maxOf(bookedSlots.size, bookedCounter ?: 0)
 }
 
 /**
@@ -66,7 +82,12 @@ object SlotParser {
         val slots = readRows(doc)
             .filter { it.date == null || it.date == date }
             .distinctBy { Triple(it.date, it.start, it.end) }
-        return ParseResult(counter, slots, findDateInput(doc)?.attr("value")?.trim())
+        return ParseResult(
+            bookedCounter = counter,
+            slots = slots,
+            shownDate = findDateInput(doc)?.attr("value")?.trim(),
+            totalCounter = findCounter(doc, "Total Slots"),
+        )
     }
 
     /** The date box in "At a Glance": an input whose value looks like 18-11-2026. */

@@ -173,8 +173,17 @@ private fun HistoryRow(e: HistoryEntry) {
                     FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                         e.slots.forEach { TimeChip(slotLabel(it), emphasized = true) }
                     }
-                } else if (!e.ok || e.message.contains("page showed")) {
-                    Text(e.message, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                // Errors show the whole message; good checks show only the detail ("18 slots read").
+                val detail = when {
+                    !e.ok -> e.message
+                    e.message.contains(" · ") -> e.message.substringAfter(" · ")
+                    e.message.contains("page showed") -> e.message
+                    else -> null
+                }
+                if (detail != null) {
+                    Spacer(Modifier.height(Space.xs))
+                    Text(detail, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
         }
