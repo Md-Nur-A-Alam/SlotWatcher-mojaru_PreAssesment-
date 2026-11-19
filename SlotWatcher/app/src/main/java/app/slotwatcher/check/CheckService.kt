@@ -21,6 +21,7 @@ import app.slotwatcher.net.LayoutException
 import app.slotwatcher.net.LoginException
 import app.slotwatcher.net.MojaruClient
 import app.slotwatcher.net.ParseResult
+import app.slotwatcher.net.ParseSource
 import app.slotwatcher.net.SlotParser
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -57,9 +58,9 @@ object CheckRunner {
                 val r = client.check(ctx, creds.login, creds.password, creds.listUrl, date)
                 client.lastPageHtml?.let { Diagnostics.saveLastPage(ctx, it, r) }
                 return when {
-                    !r.recognized -> CheckOutcome.Unreadable("No slot table or Booked Slots counter on the page")
+                    !r.recognized -> CheckOutcome.Unreadable("No slot table or Booked Slots counter on the page" + seen(r))
                     // Never report "nothing booked" from a table that didn't load.
-                    !r.trustworthy -> CheckOutcome.Unreadable("The slot table didn't load")
+                    !r.trustworthy -> CheckOutcome.Unreadable("The slot table didn't load" + seen(r))
                     else -> CheckOutcome.Ok(r)
                 }
             } catch (e: LoginException) {
@@ -72,6 +73,19 @@ object CheckRunner {
             }
         }
         return CheckOutcome.NetworkFailed(lastError)
+    }
+
+    /** What the page showed, e.g. " (Total Slots 18, Booked Slots 0, 0 slot rows, page date 18-11-2026)". */
+    private fun seen(r: ParseResult): String {
+        val parts = buildList {
+            add("Total Slots ${r.totalCounter ?: "not found"}")
+            add("Booked Slots ${r.bookedCounter ?: "not found"}")
+            add("${r.slots.size} slot rows")
+            if (r.otherDateRows > 0) add("${r.otherDateRows} rows for another date")
+            r.shownDate?.let { add("page date $it") }
+            if (r.source == ParseSource.Static) add("raw page" + (r.note?.let { ": $it" } ?: ""))
+        }
+        return " (" + parts.joinToString(", ") + ")"
     }
 }
 
@@ -121,7 +135,9 @@ class CheckService : Service() {
     private suspend fun runCheck() {
         val ctx = applicationContext
         val state = Repo.session.value
-        val date = state?.session?.date ?: LocalDate.now()
+        // A running session checks its own date. Anything else (Check now with no session, or after
+        // a session ended) checks today: an old session's date would filter out every row on today's page.
+        val date = if (state?.active == true) state.session.date else LocalDate.now()
 
         val creds = CredentialStore.get(ctx)
         if (creds == null) {
@@ -187,14 +203,23 @@ class CheckService : Service() {
                 val wanted = date.format(SlotParser.DMY_FORMAT)
                 if (r.shownDate != null && r.shownDate != wanted) summary += " (page showed ${r.shownDate})"
 
-                val read = if (r.slots.isNotEmpty()) " · ${r.slots.size} slots read" else " · from the Booked Slots counter"
-                Repo.addHistory(HistoryEntry(at, true, n, booked.map { it.label }, summary + read))
+                // The grey detail line in History: enough to tell what the check actually read.
+                val pages = if (r.pagesRead > 1) " on ${r.pagesRead} pages" else ""
+                val read = buildString {
+                    append(if (r.slots.isNotEmpty()) " · ${r.slots.size} slots read$pages" else " · no slot rows found, used the Booked Slots counter")
+                    if (r.otherDateRows > 0) append(" · ${r.otherDateRows} rows were for another date")
+                    if (r.source == ParseSource.Static) append(" · raw page" + (r.note?.let { " ($it)" } ?: ""))
+                }
+                Repo.addHistory(HistoryEntry(at, true, n, booked.map { it.historyLabel }, summary + read))
                 val alert = if (n > 0) {
+                    val missing = n - booked.size
                     AlarmInfo(
                         kind = AlarmKind.Booked,
                         title = Format.slotsBooked(n),
-                        lines = booked.map { "${Format.time(it.start)} – ${Format.time(it.end)}" },
-                        speech = Format.speechBooked(lang, n, booked.map { it.start }),
+                        lines = booked.map { s ->
+                            "${Format.time(s.start)} – ${Format.time(s.end)}" + (s.participant?.let { " · $it" } ?: "")
+                        } + (if (missing > 0 && booked.isNotEmpty()) listOf("$missing more: time not visible") else emptyList()),
+                        speech = Format.speechBooked(lang, n, booked.map { it.start to it.participant }),
                         dateText = Format.day(date),
                         lang = lang,
                     )

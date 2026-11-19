@@ -1,6 +1,6 @@
 # Slot Watcher
 
-An Android app for Mojaru pre-assessment examiners. It signs in to the Mojaru Teacher Panel at the times you choose and checks the Pre Assessment List for booked slots, so you don't have to keep checking by hand. When slots are booked, it rings and reads out their times ("2 slots booked: 6:30 PM and 7:10 PM") until you dismiss it.
+An Android app for Mojaru pre-assessment examiners. It signs in to the Mojaru Teacher Panel at the times you choose and checks the Pre Assessment List for booked slots, so you don't have to keep checking by hand. When slots are booked, it rings and reads out each slot's time and participant ("3 slots booked. 6:40 PM, Rukiya Mahmud. 6:50 PM, …") until you dismiss it.
 
 <p>
   <img src="assets/logo.png" alt="Slot Watcher logo" width="96">
@@ -10,7 +10,7 @@ An Android app for Mojaru pre-assessment examiners. It signs in to the Mojaru Te
 
 1. Sign in once with your Mojaru Teacher Panel email or mobile and password.
 2. Start a session: pick the date, the first and last check time, and the gap. For example, 6:25 PM to 9:15 PM every 10 minutes gives 18 checks: 6:25, 6:35 … 9:05, 9:15.
-3. At each check time the app signs in and opens the Pre Assessment List in a hidden in-app browser. The panel fills in its counters and slot table with JavaScript, so the app lets the page finish loading, sets the date, shows all rows, then reads the booked slots. The booked count is the higher of the Booked Slots counter and the booked rows found.
+3. At each check time the app signs in and reads the slots for the chosen date from the panel's own data feed, the same one the Pre Assessment List uses to draw its table. It reads every page (15 rows per page), with each slot's time, status and participant name. If the feed fails, it falls back to opening the list in a hidden in-app browser. The booked count is the higher of the Booked Slots counter and the booked rows found.
 4. It announces the result:
    - **Slots booked:** alarm tone and spoken slot times, repeating until you tap Dismiss. It shows full-screen, even over the lock screen.
    - **Nothing booked:** one short tone and "No slot booked. Next check at 6:45 PM." This can be turned off.
@@ -69,7 +69,7 @@ document/requirements.html     Requirements specification
 assets/                        Logo, developer photo, screenshots of the manual workflow
 SlotWatcher/                   Android app (Kotlin, Jetpack Compose, Material 3)
   app/src/main/java/app/slotwatcher/
-    net/      MojaruClient (login + list page), PageRenderer (hidden WebView that runs the
+    net/      MojaruClient (login + slot data feed), PageRenderer (fallback: hidden WebView that runs the
               page's JavaScript), SlotParser (reads booked slots)
     check/    CheckTimes, CheckScheduler (exact alarms), CheckService, receivers, Diagnostics
     alarm/    AlarmRingService (tone + voice), AlarmActivity (full-screen alarm)

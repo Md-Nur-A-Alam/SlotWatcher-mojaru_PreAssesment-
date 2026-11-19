@@ -322,8 +322,11 @@ private fun LastResultCard(e: HistoryEntry?) {
 
 /** "18:30 - 18:40" -> "6:30 – 6:40 PM" style label. */
 fun slotLabel(raw: String): String {
-    val parts = raw.split("-").map { it.trim() }
-    return if (parts.size == 2) "${Format.time(parts[0])} – ${Format.time(parts[1])}" else raw
+    val range = raw.substringBefore("|")
+    val name = raw.substringAfter("|", "").takeIf { it.isNotBlank() }
+    val parts = range.split("-").map { it.trim() }
+    val time = if (parts.size == 2) "${Format.time(parts[0])} – ${Format.time(parts[1])}" else range
+    return if (name != null) "$time · $name" else time
 }
 
 private data class Quad<A, B, C, D>(val a: A, val b: B, val c: C, val d: D)

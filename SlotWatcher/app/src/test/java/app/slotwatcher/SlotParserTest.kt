@@ -106,6 +106,78 @@ class SlotParserTest {
         assertEquals(4, r.totalBooked)
     }
 
+    private fun namedRow(from: String, to: String, status: String, name: String) =
+        "<tr><td>18 Nov 2026 $from - $to</td><td>Math Competency Test (MCT) for Abacus</td>" +
+            "<td>Abacus</td><td><span class=\"badge\">$status</span></td><td>$name</td><td>01*******17</td><td>Join</td></tr>"
+
+    /** assets/1st–3rd.jpeg: 18 slots over 2 table pages (15 + 3), Booked Slots 3, one absent. */
+    @Test
+    fun `two table pages merge and keep participant names`() {
+        val page1 = page(
+            3,
+            namedRow("18:30", "18:40", "absent", "Ahnaf Hossain Abrar / muntaha") +
+                namedRow("18:40", "18:50", "booked", "Rukiya Mahmud") +
+                namedRow("18:50", "19:00", "booked", "সাবা") +
+                namedRow("19:00", "19:10", "booked", "nur afza") +
+                (19..20).joinToString("") { h -> row("$h:10", "$h:20", "available") },
+        )
+        val page2 = page(3, row("21:00", "21:10", "available") + row("21:10", "21:20", "available") + row("21:20", "21:30", "available"))
+
+        val r = SlotParser.merge(listOf(SlotParser.parse(page1, day), SlotParser.parse(page2, day)))
+        assertEquals(9, r.slots.size)
+        assertEquals(3, r.totalBooked)
+        assertEquals(
+            listOf("18:40 - 18:50|Rukiya Mahmud", "18:50 - 19:00|সাবা", "19:00 - 19:10|nur afza"),
+            r.bookedSlots.map { it.historyLabel },
+        )
+        // Empty slots have "--" as the participant; that isn't a name.
+        assertEquals(null, r.slots.last().participant)
+        assertTrue(r.trustworthy)
+    }
+
+    /** An extra cell in each row (hidden serial column) shifts columns; the badge still gives the status. */
+    @Test
+    fun `status comes from the badge even when columns are shifted`() {
+        val shifted = Jsoup.parse(
+            """
+            <div><span>Total Slots</span><div>2</div></div><div><span>Booked Slots</span><div>1</div></div>
+            <table><thead><tr><th>Date / Time Slot</th><th>Pre-Assessment Name</th><th>Course</th><th>Slot Status</th><th>Participant Name</th></tr></thead>
+            <tbody>
+              <tr><td>1</td><td>18 Nov 2026 18:40 - 18:50</td><td>MCT</td><td>অ্যাবাকাস</td><td><span class="badge">booked</span></td><td>Rukiya Mahmud</td></tr>
+              <tr><td>2</td><td>18 Nov 2026 18:50 - 19:00</td><td>MCT</td><td>অ্যাবাকাস</td><td><span class="badge">available</span></td><td>--</td></tr>
+            </tbody></table>
+            """.trimIndent(),
+        )
+        val r = SlotParser.parse(shifted, day)
+        assertEquals(listOf("18:40 - 18:50"), r.bookedSlots.map { it.label })
+    }
+
+    /** "Check now" with an old session's date: today's rows were all filtered out, leaving only the count. */
+    @Test
+    fun `rows for a different date are counted as such`() {
+        val r = SlotParser.parse(page(3, row("18:40", "18:50", "booked")), LocalDate.of(2026, 11, 17))
+        assertEquals(0, r.slots.size)
+        assertEquals(1, r.otherDateRows)
+    }
+
+    /** A slot list drawn as cards (no <table>), as some mobile layouts do. */
+    @Test
+    fun `slots in cards instead of a table are read`() {
+        val cards = Jsoup.parse(
+            """
+            <div><span>Total Slots</span><div>18</div></div><div><span>Booked Slots</span><div>0</div></div>
+            <div class="list">
+              <div class="card"><div>18 Nov 2026</div><div>18:40 - 18:50</div><div>MCT</div><span class="badge">booked</span></div>
+              <div class="card"><div>18 Nov 2026</div><div>18:50 - 19:00</div><div>MCT</div><span class="badge">available</span></div>
+            </div>
+            """.trimIndent(),
+        )
+        val r = SlotParser.parse(cards, day)
+        assertEquals(2, r.slots.size)
+        assertEquals(listOf("18:40 - 18:50"), r.bookedSlots.map { it.label })
+        assertTrue(r.trustworthy)
+    }
+
     @Test
     fun `unrelated page is not recognized`() {
         assertFalse(SlotParser.parse(Jsoup.parse("<h1>Dashboard</h1>"), day).recognized)

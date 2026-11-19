@@ -125,8 +125,11 @@ fun SettingsScreen(onAccount: () -> Unit, onSignedOut: () -> Unit) {
                             AlarmInfo(
                                 kind = AlarmKind.Test,
                                 title = "Test alarm",
-                                lines = listOf("6:30 PM – 6:40 PM", "7:10 PM – 7:20 PM"),
-                                speech = Format.speechBooked(settings.voice, 2, listOf("18:30", "19:10")),
+                                lines = listOf("6:30 PM – 6:40 PM · Sample Student", "7:10 PM – 7:20 PM · Another Student"),
+                                speech = Format.speechBooked(
+                                    settings.voice, 2,
+                                    listOf("18:30" to "Sample Student", "19:10" to "Another Student"),
+                                ),
                                 dateText = "This is how a booking sounds",
                                 lang = settings.voice,
                             ),

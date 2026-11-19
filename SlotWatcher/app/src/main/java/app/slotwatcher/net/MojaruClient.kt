@@ -128,6 +128,7 @@ class MojaruClient(private val base: String = BASE) {
      */
     suspend fun check(ctx: Context?, user: String, password: String, listUrlOverride: String?, date: LocalDate): ParseResult {
         val wanted = date.format(SlotParser.DMY_FORMAT)
+        var apiNote: String? = null
         val (listUrl, staticDoc) = withContext(Dispatchers.IO) {
             val landing = login(user, password)
             val url = listUrlOverride?.trim()?.takeIf { it.isNotEmpty() }
@@ -141,18 +142,78 @@ class MojaruClient(private val base: String = BASE) {
             doc.location().ifBlank { url } to doc
         }
 
+        // 1. The panel's own data feed: exact times, names and statuses, every page.
+        try {
+            return withContext(Dispatchers.IO) { readFeed(feedUrl(staticDoc), date) }
+        } catch (e: IOException) {
+            apiNote = "data feed failed: ${e.message ?: e.javaClass.simpleName}"
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            apiNote = "data feed unreadable: ${e.message ?: e.javaClass.simpleName}"
+        }
+
+        // 2. Otherwise read the page itself.
+        var note: String? = apiNote
         if (ctx != null) {
-            val rendered = runCatching {
-                PageRenderer.render(ctx, listUrl, cookies(), wanted, USER_AGENT)
-            }.getOrNull()
-            if (rendered != null && !rendered.url.contains("/login")) {
-                lastPageHtml = rendered.html
-                val doc = Jsoup.parse(rendered.html, rendered.url)
-                return SlotParser.parse(doc, date).copy(source = ParseSource.Rendered)
+            val attempt = runCatching { PageRenderer.render(ctx, listUrl, cookies(), wanted, USER_AGENT) }
+            val rendered = attempt.getOrNull()
+            val browserNote = when {
+                attempt.isFailure -> "in-app browser failed: ${attempt.exceptionOrNull()?.let { it.message ?: it.javaClass.simpleName }}"
+                rendered == null || rendered.pages.isEmpty() -> "in-app browser returned nothing"
+                rendered.url.contains("/login") -> "in-app browser was sent to the login page"
+                else -> null
+            }
+            note = listOfNotNull(apiNote, browserNote).joinToString("; ").ifEmpty { null }
+            if (rendered != null && browserNote == null) {
+                lastPageHtml = rendered.pages.mapIndexed { i, html ->
+                    "<!-- ===== table page ${i + 1} of ${rendered.pages.size} ===== -->\n$html"
+                }.joinToString("\n")
+                val results = rendered.pages.map { SlotParser.parse(Jsoup.parse(it, rendered.url), date) }
+                return SlotParser.merge(results).copy(source = ParseSource.Rendered, pagesRead = results.size, note = apiNote)
             }
         }
-        lastPageHtml = staticDoc.outerHtml()
-        return SlotParser.parse(staticDoc, date).copy(source = ParseSource.Static)
+        lastPageHtml = "<!-- raw page: ${note ?: "no in-app browser"} -->\n" + staticDoc.outerHtml()
+        return SlotParser.parse(staticDoc, date).copy(source = ParseSource.Static, note = note)
+    }
+
+    /** The feed URL named in the list page's script, or the known one. */
+    private fun feedUrl(listPage: Document): String {
+        val inScript = Regex("""["'](https?://[^"']*schedule-slots[^"']*)["']""").find(listPage.html())?.groupValues?.get(1)
+        return inScript ?: "$base/teacher/pre-assessments/schedule-slots"
+    }
+
+    /** Reads every page of the feed for [date], the way the list page asks for it. */
+    private fun readFeed(url: String, date: LocalDate): ParseResult {
+        val day = date.toString() // yyyy-MM-dd
+        val pages = mutableListOf<SlotParser.ApiPage>()
+        val raw = mutableListOf<String>()
+        var page = 1
+        do {
+            val u = url.toHttpUrlOrNull()?.newBuilder()
+                ?.setQueryParameter("page", page.toString())
+                ?.setQueryParameter("status", "all")
+                ?.setQueryParameter("search", "")
+                ?.setQueryParameter("start_date", day)
+                ?.setQueryParameter("end_date", day)
+                ?.build() ?: throw LayoutException("Bad feed URL")
+            val req = Request.Builder().url(u)
+                .header("User-Agent", USER_AGENT)
+                .header("Accept", "application/json")
+                .header("X-Requested-With", "XMLHttpRequest")
+                .build()
+            val body = http.newCall(req).execute().use { resp ->
+                if (!resp.isSuccessful) throw IOException("HTTP ${resp.code}")
+                resp.body?.string().orEmpty()
+            }
+            raw += body
+            val p = SlotParser.parseApi(body, date)
+            pages += p
+            page++
+        } while (page <= p.totalPages && page <= 20)
+        lastPageHtml = raw.mapIndexed { i, s -> "<!-- ===== data feed page ${i + 1} of ${raw.size} ===== -->\n$s" }
+            .joinToString("\n")
+        return SlotParser.merge(pages.map { it.result }).copy(source = ParseSource.Api, pagesRead = pages.size)
     }
 
     /** Session cookies from the login, to hand to the WebView. */

@@ -12,8 +12,8 @@ android {
         applicationId = "app.slotwatcher"
         minSdk = 26
         targetSdk = 34
-        versionCode = 1
-        versionName = "1.0"
+        versionCode = 6
+        versionName = "1.6"
     }
 
     buildTypes {
@@ -57,4 +57,6 @@ dependencies {
     implementation("org.jsoup:jsoup:1.18.1")
 
     testImplementation("junit:junit:4.13.2")
+    // Android's org.json is a stub in local unit tests; use the real one there.
+    testImplementation("org.json:json:20240303")
 }

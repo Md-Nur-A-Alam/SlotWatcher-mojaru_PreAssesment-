@@ -49,6 +49,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
+import androidx.lifecycle.lifecycleScope
 import app.slotwatcher.BuildConfig
 import app.slotwatcher.data.CredentialStore
 
@@ -68,6 +69,9 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         val demo = BuildConfig.DEBUG && intent.getBooleanExtra("demo", false)
         if (demo && savedInstanceState == null) DemoData.seed()
+        if (BuildConfig.DEBUG && savedInstanceState == null) {
+            intent.getStringExtra("renderTest")?.let { DemoData.renderTest(this, lifecycleScope, it) }
+        }
         setContent { SlotWatcherTheme { App(demo) } }
     }
 }

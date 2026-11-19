@@ -58,7 +58,9 @@
 <main>
 
 <h1>Slot Watcher: Android App Requirements Specification</h1>
-<p class="byline">Version 1.2 · 18 Nov 2026 · Author: Md. Nur A Alam</p>
+<p class="byline">Version 1.4 · 18 Nov 2026 · Author: Md. Nur A Alam</p>
+<p class="note"><strong>Changes in 1.4:</strong> the app now reads the slots from the panel's own data feed, the one the list page uses to draw its table. This gives exact times (converted from UTC to Bangladesh time), participant names and statuses for every page, whatever the phone's time format. The hidden in-app browser is now only a fallback (FR-11, section 7). A “couldn't read” warning now says what the page showed.</p>
+<p class="note"><strong>Changes in 1.3:</strong> the alarm now gives each booked slot’s time and participant name, not just the count. The app waits for the slot rows themselves to load, and reads every page of the slot table (FR-14, FR-14a).</p>
 <p class="note"><strong>Changes in 1.2:</strong> fixed a wrong “No slot booked” result. The panel fills in its counters and slot table with JavaScript, so the app now reads the list in a hidden in-app browser (FR-11, section 7). An empty table is no longer trusted as “nothing booked” (FR-24a), the booked count uses the higher of the counter and the booked rows (FR-12), and Settings can share the last page read (FR-32).</p>
 <p class="note"><strong>Changes in 1.1:</strong> every check is now announced (FR-21), alert settings and a Bangla voice were added (FR-26 to FR-30), the screens follow the Mojaru brand theme (section 6), and the app has a Developer profile tab (FR-31).</p>
 
@@ -141,10 +143,11 @@
 <h3>Each check</h3>
 <div class="table-wrap"><table>
   <tr><th>ID</th><th>Requirement</th></tr>
-  <tr><td>FR-11</td><td>At each check time the app logs in and opens the Pre Assessment List in a hidden in-app browser, so the page’s JavaScript fills in the counters and slot table. It sets the date box to the chosen date and waits until the table has finished loading. If that fails, it falls back to the page’s raw HTML.</td></tr>
+  <tr><td>FR-11</td><td>At each check time the app logs in and reads the slots for the chosen date from the panel’s data feed (the one the Pre Assessment List uses), every page of it. If the feed fails, it opens the list in a hidden in-app browser so the page’s JavaScript fills in the table, and as a last resort reads the page’s raw HTML.</td></tr>
   <tr><td>FR-12</td><td>It reads the Booked Slots count and the table rows, and records each booked slot’s time range (e.g. 18:30 - 18:40). The booked total is the higher of the Booked Slots counter and the number of booked rows.</td></tr>
   <tr><td>FR-13</td><td>A slot counts as booked when its Slot Status says “booked” or anything else except “available”, “expired”, “completed”, “present” or “absent”.</td></tr>
-  <tr><td>FR-14</td><td>If the table is split into pages, the app shows all rows on one page before reading.</td></tr>
+  <tr><td>FR-14</td><td>The table shows 15 rows per page (“1 2” below it). The app reads every page, clicking each page number and waiting for its rows, then merges the rows.</td></tr>
+  <tr><td>FR-14a</td><td>For each booked slot the app also reads the Participant Name. The alarm and History show and speak it with the time, e.g. “3 slots booked. 6:40 PM, Rukiya Mahmud. 6:50 PM, …”.</td></tr>
   <tr><td>FR-15</td><td>Each check is logged with its time, booked count, booked slot times and result (OK / error).</td></tr>
 </table></div>
 
@@ -235,15 +238,16 @@
 </table></div>
 
 <h2>7. Technical approach</h2>
-<p>Mojaru has no public API, so the app reads the same pages the browser does. It combines direct HTTP for the login with a hidden WebView for the slot list.</p>
+<p>Mojaru has no public API, so the app does what the browser does: it logs in over HTTP, then asks the same data feed the list page uses.</p>
 <div class="table-wrap"><table>
   <tr><th>Step</th><th>How it works</th><th>Why</th></tr>
   <tr><td>1. Log in (HTTP)</td><td>Load <code>/teacher/login</code>, read its hidden <code>_token</code>, post <code>email_or_mobile</code> and <code>password</code> to <code>/teacher/post/login</code> with OkHttp</td><td>Fast, and a rejected login is easy to detect</td></tr>
   <tr><td>2. Find the list (HTTP)</td><td>Take the Pre Assessment List link from the dashboard menu, or the address set under Advanced</td><td>Survives small menu changes</td></tr>
-  <tr><td>3. Render the list (WebView)</td><td>Copy the login cookies into a hidden WebView, open the list, set the date box, wait until no requests are running and the page stops changing, show all table rows</td><td>The panel fills in its counters and slot table with JavaScript; the raw HTML has them empty (the cause of a wrong “No slot booked” in v1.1)</td></tr>
-  <tr><td>4. Read (Jsoup)</td><td>Parse the rendered page: Booked Slots and Total Slots counters, each row’s time range and Slot Status</td><td>Matches content, not CSS classes, so small layout changes don’t break it</td></tr>
+  <tr><td>3. Read the data feed (HTTP)</td><td>GET <code>/teacher/pre-assessments/schedule-slots?page=N&amp;status=all&amp;start_date=YYYY-MM-DD&amp;end_date=YYYY-MM-DD</code> with the login cookies, for every page in <code>meta.totalPages</code>. Each row has <code>slotDetails.startDateTime</code>/<code>endDateTime</code> (UTC), <code>slotDetails.status</code> and <code>bookingDetails.studentDetails.user_name</code>; <code>data.summary</code> has <code>totalSlots</code> and <code>totalBookedSlots</code></td><td>Exact data, no waiting for JavaScript, and no dependence on the phone's locale (the page shows times in the phone's own format, e.g. 12-hour “06:40 PM”)</td></tr>
+  <tr><td>4. Fallback: render the list (WebView)</td><td>Copy the login cookies into a hidden WebView, open the list, set the date box, wait until no requests are running and the page stops changing, show all table rows</td><td>The panel fills in its counters and slot table with JavaScript; the raw HTML has them empty (the cause of a wrong “No slot booked” in v1.1)</td></tr>
+  <tr><td>5. Fallback: read (Jsoup)</td><td>Parse the rendered page: Booked Slots and Total Slots counters, each row’s time range and Slot Status</td><td>Matches content, not CSS classes, so small layout changes don’t break it</td></tr>
 </table></div>
-<p>If the WebView fails, the app falls back to the raw HTML, and an empty table is then reported as “couldn’t read”, never as “nothing booked”.</p>
+<p>If the data feed fails, the app reads the page in a hidden WebView. If that fails too, it falls back to the raw HTML, and an empty table is then reported as “couldn’t read”, never as “nothing booked”.</p>
 <p><strong>Stack:</strong> Kotlin, Jetpack Compose (Material 3), AlarmManager alarm-clock alarms to wake the app for each check, a short foreground service to run the check, Android WebView, OkHttp and Jsoup, Android TextToSpeech for the voice, and EncryptedSharedPreferences (Android Keystore) for the login.</p>
 
 <figure>

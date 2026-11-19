@@ -38,12 +38,37 @@ object Format {
 
     // ---- spoken messages per voice language ----
 
-    fun speechBooked(lang: VoiceLanguage, n: Int, startTimes: List<String>): String = when (lang) {
-        VoiceLanguage.English -> spokenMessage(n, startTimes)
-        VoiceLanguage.Bangla -> {
-            val head = "${bnDigits(n.toString())}টি স্লট বুক হয়েছে।"
-            if (startTimes.isEmpty()) head
-            else "$head সময়: ${bnJoin(startTimes.mapNotNull { runCatching { bnTime(LocalTime.parse(it)) }.getOrNull() })}।"
+    /**
+     * What the alarm says for booked slots. [slots] = (start "18:40", participant name or null).
+     * With names: "3 slots booked. 6:40 PM, Rukiya Mahmud. 6:50 PM, Saba. 7:00 PM, Nur Afza."
+     * Without: "2 slots booked: 6:30 PM and 7:10 PM."
+     */
+    fun speechBooked(lang: VoiceLanguage, n: Int, slots: List<Pair<String, String?>>): String {
+        val missing = (n - slots.size).coerceAtLeast(0).takeIf { it > 0 && slots.isNotEmpty() }
+        val anyName = slots.any { it.second != null }
+        return when (lang) {
+            VoiceLanguage.English -> {
+                val body = when {
+                    slots.isEmpty() -> "${slotsBooked(n)}."
+                    !anyName -> spokenMessage(n, slots.map { it.first })
+                    else -> "${slotsBooked(n)}. " + slots.joinToString(" ") { (start, name) ->
+                        time(start) + (name?.let { ", $it" } ?: "") + "."
+                    }
+                }
+                body + (missing?.let { " $it more could not be read." } ?: "")
+            }
+            VoiceLanguage.Bangla -> {
+                val head = "${bnDigits(n.toString())}টি স্লট বুক হয়েছে।"
+                val times = slots.map { (start, name) ->
+                    (runCatching { bnTime(LocalTime.parse(start)) }.getOrNull() ?: start) to name
+                }
+                val body = when {
+                    times.isEmpty() -> head
+                    !anyName -> "$head সময়: ${bnJoin(times.map { it.first })}।"
+                    else -> "$head " + times.joinToString(" ") { (t, name) -> t + (name?.let { ", $it" } ?: "") + "।" }
+                }
+                body + (missing?.let { " আরও ${bnDigits(it.toString())}টির সময় পড়া যায়নি।" } ?: "")
+            }
         }
     }
 
